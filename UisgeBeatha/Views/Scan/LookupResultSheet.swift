@@ -13,13 +13,19 @@ struct LookupResultSheet: View {
 
     /// Neither lookup tier always returns ABV (UPCitemdb never does), and
     /// neither returns an age statement at all, so both fall back to
-    /// parsing the product name when the structured field is missing.
+    /// parsing whatever text the source gave us — the title alone is often
+    /// too terse to mention either, so the (usually longer) description is
+    /// searched too when the source provides one.
+    private var searchableText: [String] {
+        [product.name, product.descriptionText].compactMap { $0 }
+    }
+
     private var resolvedABV: Double? {
-        product.abv ?? WhiskyLabelParser.abv(from: product.name)
+        product.abv ?? WhiskyLabelParser.abv(in: searchableText)
     }
 
     private var resolvedAge: Int? {
-        WhiskyLabelParser.age(from: product.name)
+        WhiskyLabelParser.age(in: searchableText)
     }
 
     private var prefill: LookupPrefill {

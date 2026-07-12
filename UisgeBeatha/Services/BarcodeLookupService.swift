@@ -11,6 +11,10 @@ nonisolated struct LookupProduct: Codable, Sendable, Equatable {
     var imageURL: String?
     var abv: Double?
     var categoryTags: [String] = []
+    /// Longer free-text description, when the source provides one (only
+    /// UPCitemdb does). Product titles are often too terse to mention ABV
+    /// or age; descriptions more often spell them out.
+    var descriptionText: String?
 }
 
 nonisolated enum LookupOutcome: Codable, Sendable, Equatable {
@@ -204,6 +208,7 @@ struct UPCItemDBTier: BarcodeLookupTier {
         }
         struct Item: Decodable {
             let title: String?
+            let description: String?
             let brand: String?
             let images: [String]?
         }
@@ -218,32 +223,70 @@ struct UPCItemDBTier: BarcodeLookupTier {
             brand: item.brand,
             imageURL: item.images?.first,
             abv: nil,
-            categoryTags: []
+            categoryTags: [],
+            descriptionText: item.description
         )
     }
 }
 
 // MARK: - Label text fallback
 
-/// Best-effort ABV / age extraction from a product name. UPCitemdb never
-/// returns a structured ABV field and neither tier returns age at all, but
-/// whisky listing titles almost always spell both out ("Lagavulin 16 Year
-/// Old ... 43%"), so this backstops the structured fields when they're
-/// missing.
+/// Best-effort ABV / age extraction from whatever free text a lookup
+/// returns. UPCitemdb never returns a structured ABV field and neither
+/// tier returns age at all, but whisky listing titles and descriptions
+/// almost always spell both out ("Lagavulin 16 Year Old ... 43%", "90
+/// Proof"), so this backstops the structured fields when they're missing.
+/// Titles alone are often too terse to mention either, so callers should
+/// pass every text field a source provides (title, description, ...) —
+/// the first source with a match wins.
 nonisolated enum WhiskyLabelParser {
     static func abv(from name: String) -> Double? {
-        guard let regex = try? NSRegularExpression(pattern: #"(\d{1,2}(?:\.\d)?)\s*%"#) else {
-            return nil
-        }
-        guard let value = firstMatch(regex, in: name), (20...80).contains(value) else { return nil }
-        return value
+        abv(in: [name])
     }
 
     static func age(from name: String) -> Int? {
+        age(in: [name])
+    }
+
+    static func abv(in texts: [String]) -> Double? {
+        for text in texts {
+            if let value = percentMatch(in: text) { return value }
+        }
+        for text in texts {
+            if let value = proofMatch(in: text) { return value }
+        }
+        return nil
+    }
+
+    static func age(in texts: [String]) -> Int? {
+        for text in texts {
+            if let value = ageMatch(in: text) { return value }
+        }
+        return nil
+    }
+
+    private static func percentMatch(in text: String) -> Double? {
+        guard let regex = try? NSRegularExpression(pattern: #"(\d{1,2}(?:\.\d)?)\s*%"#) else {
+            return nil
+        }
+        guard let value = firstMatch(regex, in: text), (20...80).contains(value) else { return nil }
+        return value
+    }
+
+    /// US retail listings often state proof (ABV × 2) instead of a percentage.
+    private static func proofMatch(in text: String) -> Double? {
+        guard let regex = try? NSRegularExpression(
+            pattern: #"(\d{2,3}(?:\.\d)?)\s*proof"#, options: [.caseInsensitive]
+        ) else { return nil }
+        guard let value = firstMatch(regex, in: text), (40...160).contains(value) else { return nil }
+        return value / 2
+    }
+
+    private static func ageMatch(in text: String) -> Int? {
         guard let regex = try? NSRegularExpression(
             pattern: #"(\d{1,2})\s*[- ]?(?:years?|yrs?|yo)\b"#, options: [.caseInsensitive]
         ) else { return nil }
-        guard let value = firstMatch(regex, in: name), (3...50).contains(value) else { return nil }
+        guard let value = firstMatch(regex, in: text), (3...50).contains(value) else { return nil }
         return Int(value)
     }
 

@@ -158,6 +158,15 @@ struct BarcodeLookupTests {
         #expect(UPCItemDBTier.parse(Data(#"{"code": "OK", "items": []}"#.utf8)) == nil)
     }
 
+    @Test func upcItemDBCapturesDescriptionForLabelParsing() {
+        let json = """
+        {"code": "OK", "items": [{"title": "Talisker 10", "brand": "Talisker",
+         "description": "Talisker 10 Year Old Single Malt Scotch Whisky, 45.8% ABV, 750ml"}]}
+        """
+        let product = UPCItemDBTier.parse(Data(json.utf8))
+        #expect(product?.descriptionText?.contains("45.8%") == true)
+    }
+
     // MARK: - Label text fallback
 
     @Test func labelParserExtractsAgeFromCommonPhrasings() {
@@ -176,8 +185,23 @@ struct BarcodeLookupTests {
         #expect(WhiskyLabelParser.abv(from: "Lagavulin 16 43.0% Vol") == 43.0)
     }
 
+    @Test func labelParserExtractsABVFromProof() {
+        #expect(WhiskyLabelParser.abv(from: "Wild Turkey 101 Proof") == 50.5)
+        #expect(WhiskyLabelParser.abv(from: "Elijah Craig 94 Proof Bourbon") == 47)
+    }
+
     @Test func labelParserABVIgnoresImplausibleValues() {
         #expect(WhiskyLabelParser.abv(from: "Bottled at 5% by an unrelated product") == nil)
         #expect(WhiskyLabelParser.abv(from: "No percentage here") == nil)
+    }
+
+    @Test func labelParserSearchesEverySourceUntilAMatch() {
+        // Title alone is too terse; the description carries the details.
+        let title = "Talisker 10"
+        let description = "Talisker 10 Year Old Single Malt Scotch Whisky, 45.8% ABV"
+        #expect(WhiskyLabelParser.age(in: [title, description]) == 10)
+        #expect(WhiskyLabelParser.abv(in: [title, description]) == 45.8)
+        // A match in the first source short-circuits the rest.
+        #expect(WhiskyLabelParser.age(in: ["12 Year Old", "18 Year Old"]) == 12)
     }
 }
