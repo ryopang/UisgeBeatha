@@ -61,9 +61,19 @@ All six planned build phases are complete and merged to `main`:
 | 5 | Region map with centroid badges |
 | 6 | Wikipedia card, JSON/CSV export, original app icon, accessibility audits |
 
-Verified with 55 unit tests (Swift Testing) across 9 suites plus 5 end-to-end XCUITest flows, run green on fresh installs in light mode, dark mode, and at accessibility-XL Dynamic Type. Camera-dependent acceptance (live photo capture and real barcode scanning) requires a physical device.
+Verified with 62 unit tests (Swift Testing) across 9 suites plus 5 end-to-end XCUITest flows, run green on fresh installs in light mode, dark mode, and at accessibility-XL Dynamic Type. Camera-dependent acceptance (live photo capture and real barcode scanning) requires a physical device.
 
 Planned but deliberately out of v1: CloudKit sync, a stats dashboard, and world whisky — the schema, region catalog, and policy design above exist to keep those cheap.
+
+### Since v1.0
+
+Device testing surfaced scan-flow bugs the simulator can't reproduce (it has no camera). Fixed so far:
+
+- **Scanner not resuming** — the scanner used to stay mounted (merely "paused") underneath every sheet. It now fully unmounts whenever a sheet is open and remounts fresh when it closes, which also fixed a UI freeze caused by a camera session lingering resident during form edits.
+- **ABV / age not always populated from a scan** — neither lookup tier reliably returns them as structured data (UPCitemdb never returns ABV; neither returns age at all), so `WhiskyLabelParser` now backstops both by parsing whatever text a source provides — title, and UPCitemdb's longer description — recognizing "16 Year Old" style age statements and both `%` and "Proof" ABV formats.
+- **Map badges** — redesigned for legibility (bold count circle + separate label pill) and the base map simplified (no points of interest, traffic, or 3D buildings).
+
+One iteration briefly regressed live camera scanning (a custom container view controller sized the camera preview to zero at layout time); that was reverted in favor of the simpler approach that was proven working on-device. Real-camera behavior remains the one thing that can only be confirmed on a physical device, not in CI or the simulator.
 
 ## Building
 
