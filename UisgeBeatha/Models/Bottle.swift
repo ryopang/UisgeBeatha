@@ -6,6 +6,15 @@ enum BottleStatus: String, Codable, CaseIterable, Sendable {
     case sealed
     case open
     case finished
+
+    /// The status a bottle moves to when cycled (sealed → open → finished → sealed).
+    var next: BottleStatus {
+        switch self {
+        case .sealed: .open
+        case .open: .finished
+        case .finished: .sealed
+        }
+    }
 }
 
 /// A whisky bottle in the collection.

@@ -18,3 +18,19 @@ Scope (per PRD section 9, Phase 1):
 Verification: `xcodebuild build` warning-free + `xcodebuild test` green on an iOS 26.5 simulator.
 
 Out of scope here: all UI (Phase 2+), scanner, lookup services, ImageStore.
+
+# Phase 2 plan: Collection list + manual entry
+
+Scope (per PRD section 9, Phase 2):
+
+1. **RootTabView** — Liquid Glass TabView with Collection and Settings tabs (Scan joins in Phase 4). Replaces the ContentView placeholder.
+2. **Collection list** (`Views/Collection/`) — `@Query`-driven list: rows with region-colored monogram thumbnail (photos arrive in Phase 3), name, distillery, region tag, status pill, rating stars. Toolbar sort menu (name / distillery / region, persisted via `@AppStorage`), search on name + distillery, swipe actions (cycle status, delete with confirmation), empty state on fresh install.
+3. **Sort logic** in `CollectionSort.swift` — region ordering reads `RegionCatalog.sortIndex`, unit-testable.
+4. **Add/edit form** (`Views/AddEdit/BottleFormView.swift`) — name, distillery with seed-data autocomplete (picking a match auto-fills region), region picker driven by RegionCatalog, ABV, age with NAS toggle, cask type, price, purchase date, status, barcode (locked when it came from a scan). Validation: name + distillery non-empty, region selected. Same form reused for edit.
+5. **Components** (`Views/Components/`) — RegionTagView, StatusPillView, RatingStarsView (display-only; the adjustable control is Phase 3), MonogramThumbnail.
+6. **Settings** — About only for now (version, data-stays-on-device notice); export arrives in Phase 6.
+7. **Tests** — sort comparators and status cycling.
+
+Note: the PRD's empty state names a "Scan your first bottle" button; the scanner is Phase 4, so the button opens manual entry until then (same copy swap happens in Phase 4).
+
+Row tap opens the edit form in Phase 2; Phase 3 replaces this with the bottle detail push.
