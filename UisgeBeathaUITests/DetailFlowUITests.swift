@@ -121,7 +121,7 @@ final class DetailFlowUITests: XCTestCase {
         _ app: XCUIApplication, name: String, distilleryPrefix: String, suggestionRegion: String
     ) {
         let toolbarAdd = app.buttons["Add Bottle"]
-        let emptyAdd = app.buttons["Add Your First Bottle"]
+        let emptyAdd = app.buttons["Add Manually"]
         if toolbarAdd.waitForExistence(timeout: 10) {
             toolbarAdd.tap()
         } else {

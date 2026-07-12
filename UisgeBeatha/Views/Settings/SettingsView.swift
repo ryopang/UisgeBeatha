@@ -1,33 +1,82 @@
+import OSLog
+import SwiftData
 import SwiftUI
 
-/// Settings tab. v1 grows export here in Phase 6; for now, About only.
+/// Settings tab (PRD F8): export via ShareLink, About, debug lookup source.
 struct SettingsView: View {
+    @Query private var bottles: [Bottle]
+
+    @State private var jsonFileURL: URL?
+    @State private var csvFileURL: URL?
+
+    @AppStorage(CascadeBarcodeLookupService.debugSourceDefaultsKey)
+    private var lastLookupSource = "—"
+
+    private static let logger = Logger(subsystem: "com.ryo.UisgeBeatha", category: "Settings")
+
     private var appVersion: String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
         return version ?? "1.0"
     }
 
-    @AppStorage(CascadeBarcodeLookupService.debugSourceDefaultsKey)
-    private var lastLookupSource = "—"
-
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    if let jsonFileURL {
+                        ShareLink(item: jsonFileURL) {
+                            Label(Strings.Settings.exportJSON, systemImage: "square.and.arrow.up")
+                        }
+                    }
+                    if let csvFileURL {
+                        ShareLink(item: csvFileURL) {
+                            Label(Strings.Settings.exportCSV, systemImage: "tablecells")
+                        }
+                    }
+                } header: {
+                    Text(Strings.Settings.exportSection)
+                } footer: {
+                    Text(Strings.Settings.exportPhotosNote)
+                }
+
                 Section(Strings.Settings.aboutSection) {
                     LabeledContent(Strings.Settings.version, value: appVersion)
                     Text(Strings.Settings.dataNotice)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
+
                 Section(Strings.Settings.debugSection) {
                     LabeledContent(Strings.Settings.lastLookupSource, value: lastLookupSource)
                 }
             }
             .navigationTitle(Strings.Settings.title)
+            .onAppear(perform: regenerateExports)
+        }
+    }
+
+    /// Cheap for a personal collection; regenerated on every visit so the
+    /// share sheets always carry current data.
+    private func regenerateExports() {
+        let sorted = CollectionSortKey.name.sorted(Array(bottles))
+        let directory = FileManager.default.temporaryDirectory
+        do {
+            let jsonURL = directory.appendingPathComponent("UisgeBeatha-Collection.json")
+            try ExportService.jsonData(from: sorted).write(to: jsonURL)
+            jsonFileURL = jsonURL
+
+            let csvURL = directory.appendingPathComponent("UisgeBeatha-Collection.csv")
+            try Data(ExportService.csv(from: sorted).utf8).write(to: csvURL)
+            csvFileURL = csvURL
+        } catch {
+            Self.logger.error("Export generation failed: \(error)")
+            jsonFileURL = nil
+            csvFileURL = nil
         }
     }
 }
 
 #Preview {
     SettingsView()
+        .modelContainer(for: Bottle.self, inMemory: true)
 }

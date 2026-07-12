@@ -13,10 +13,10 @@ final class CollectionFlowUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
 
-        // Empty state on fresh install.
-        let emptyActionButton = app.buttons["Add Your First Bottle"]
-        XCTAssertTrue(emptyActionButton.waitForExistence(timeout: 10), "Empty state should show on fresh install")
-        emptyActionButton.tap()
+        // Empty state on fresh install: scan is primary, manual add secondary.
+        let scanActionButton = app.buttons["Scan Your First Bottle"]
+        XCTAssertTrue(scanActionButton.waitForExistence(timeout: 10), "Empty state should show on fresh install")
+        app.buttons["Add Manually"].tap()
 
         // Save must be disabled until required fields are filled.
         let saveButton = app.buttons["Save"]

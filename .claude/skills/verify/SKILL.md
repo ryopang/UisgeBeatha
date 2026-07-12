@@ -59,6 +59,17 @@ then export attachments as above (manifest lists it by its `name`).
 
 ## Gotchas learned the hard way
 
+- NEVER `simctl spawn <device> defaults write com.ryo.UisgeBeatha ...` — it writes
+  the simulator's GLOBAL prefs domain, which survives app uninstall and silently
+  poisons "fresh install" assumptions (e.g. app boots into Map mode). If it
+  happened: `xcrun simctl spawn <device> defaults delete com.ryo.UisgeBeatha`.
+- Full-suite UI runs share one app install; tests must not assume they run first
+  (only CollectionFlowUITests owns the fresh-install empty state) and must not
+  assert exact counts that other tests' leftover bottles can change.
+- Audits: `simctl ui <device> content_size accessibility-extra-large` (note the
+  underscore) for Dynamic Type; `appearance dark|light` for the dark audit; run
+  the UI suite under each.
+
 - XCUITest queries: the bottle row combines accessibility children; the status pill
   text ("Sealed"/"Open") is reachable as `cell.staticTexts["..."]` but NOT via
   `cell.label`. Form text fields are matched positionally (`textFields.element(boundBy:)`:

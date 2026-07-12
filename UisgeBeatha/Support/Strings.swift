@@ -173,11 +173,22 @@ nonisolated enum Strings {
         static let maritimeDescriptors = ["Brine", "Seaweed", "Salt"]
     }
 
+    enum Distillery {
+        static let cardTitle = "Distillery"
+        static let founded = "Founded"
+        static let owner = "Owner"
+        static let readMore = "Read more on Wikipedia"
+    }
+
     enum Settings {
         static let title = "Settings"
         static let aboutSection = "About"
         static let version = "Version"
         static let dataNotice = "Your collection stays on this device. Nothing is uploaded anywhere."
+        static let exportSection = "Export"
+        static let exportJSON = "Export Collection as JSON"
+        static let exportCSV = "Export Collection as CSV"
+        static let exportPhotosNote = "Photos are not included in exports."
         static let debugSection = "Debug"
         static let lastLookupSource = "Last Lookup Source"
     }

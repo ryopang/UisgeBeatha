@@ -39,6 +39,7 @@ struct UisgeBeathaApp: App {
             RootTabView()
                 .environment(\.distilleryStore, distilleryStore)
                 .environment(\.barcodeLookup, Self.lookupService())
+                .environment(\.wikipedia, Self.wikipediaService())
         }
         .modelContainer(modelContainer)
     }
@@ -50,5 +51,14 @@ struct UisgeBeathaApp: App {
         }
         #endif
         return CascadeBarcodeLookupService()
+    }
+
+    private static func wikipediaService() -> any WikipediaServicing {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-uiTestLookupStub") {
+            return StubWikipediaService()
+        }
+        #endif
+        return WikipediaService()
     }
 }

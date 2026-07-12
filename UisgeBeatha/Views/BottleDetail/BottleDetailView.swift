@@ -32,6 +32,7 @@ struct BottleDetailView: View {
                 heroSection
                 photoButtons
                 factsGrid
+                DistilleryCardView(distilleryName: bottle.distilleryName)
                 ratingSection
                 notesSection
             }

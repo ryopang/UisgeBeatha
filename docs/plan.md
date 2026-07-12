@@ -47,3 +47,11 @@ Scope (per PRD section 9, Phase 3):
 6. **Tests** — ImageStore round-trip/downsample/thumbnail/delete; rating formatting. UI driver extended: detail push, rating tap, note CRUD, photo via simulator photo library.
 
 Acceptance (PRD): photo persists across relaunch; replacing a photo deletes old files; rating adjustable via tap and VoiceOver; two notes display newest first; wheel renders in light and dark. Camera capture itself needs the owner's device.
+
+# Phases 4–6 (built together; see git history for detail)
+
+- **Phase 4** — VisionKit scanner + manual-entry fallback, OFF→UPCitemdb cascade behind tier protocols with 90-day disk cache (definitive outcomes only), scotch gate via CollectionPolicy, result sheet, miss path, duplicate jump, stock photo persistence, Scan tab. DEBUG lookup stub drives ScanFlowUITests.
+- **Phase 5** — List | Map toggle (persisted), MapKit Scotland framing, six centroid badges (dimmed at zero), region sheet → detail. MapFlowUITests.
+- **Phase 6** — WikipediaService (30-day cache, title fallbacks) + distillery card + SFSafariViewController; JSON/CSV export via ShareLink (photos excluded, noted in UI); original glencairn app icon (light/dark/tinted); dark-mode and accessibility-XL Dynamic Type audits ran the full UI suite green.
+
+Remaining on-device checks for the owner (camera-dependent): Phase 3 photo capture, Phase 4 live barcode scanning acceptance.

@@ -20,7 +20,10 @@ final class MapFlowUITests: XCTestCase {
         app.buttons["Map"].tap()
         let islayBadge = app.buttons["region-badge-islay"]
         XCTAssertTrue(islayBadge.waitForExistence(timeout: 10), "Region badges should render on the map")
-        XCTAssertTrue(islayBadge.label.contains("1 bottle"), "Count should match the library: \(islayBadge.label)")
+        XCTAssertTrue(
+            islayBadge.label.range(of: "[1-9][0-9]* bottle", options: .regularExpression) != nil,
+            "Islay must show a non-zero count: \(islayBadge.label)"
+        )
 
         // All six regions render; empty ones report zero.
         let campbeltownBadge = app.buttons["region-badge-campbeltown"]
