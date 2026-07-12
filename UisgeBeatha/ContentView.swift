@@ -2,18 +2,18 @@
 //  ContentView.swift
 //  UisgeBeatha
 //
-//  Created by ryo on 7/11/26.
-//
 
 import SwiftUI
 
+/// Placeholder root. Replaced by RootTabView in Phase 2.
 struct ContentView: View {
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
+        VStack(spacing: 12) {
+            Image(systemName: "wineglass")
                 .imageScale(.large)
                 .foregroundStyle(.tint)
-            Text("Hello, world!")
+            Text(Strings.App.name)
+                .font(.title2)
         }
         .padding()
     }
