@@ -11,12 +11,24 @@ struct LookupResultSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showingAddForm = false
 
+    /// Neither lookup tier always returns ABV (UPCitemdb never does), and
+    /// neither returns an age statement at all, so both fall back to
+    /// parsing the product name when the structured field is missing.
+    private var resolvedABV: Double? {
+        product.abv ?? WhiskyLabelParser.abv(from: product.name)
+    }
+
+    private var resolvedAge: Int? {
+        WhiskyLabelParser.age(from: product.name)
+    }
+
     private var prefill: LookupPrefill {
         LookupPrefill(
             name: product.name,
             distilleryName: matchedDistillery?.name ?? product.brand ?? "",
             region: matchedDistillery?.region ?? "",
-            abv: product.abv,
+            abv: resolvedABV,
+            age: resolvedAge,
             barcode: barcode,
             stockPhotoURL: product.imageURL
         )
@@ -42,8 +54,13 @@ struct LookupResultSheet: View {
                                     .font(.subheadline)
                                 RegionTagView(regionID: distillery.region)
                             }
-                            if let abv = product.abv {
+                            if let abv = resolvedABV {
                                 Text("\(abv.formatted())%")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                            if let age = resolvedAge {
+                                Text(Strings.Detail.ageValue(age))
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                             }
@@ -109,8 +126,11 @@ struct LookupResultSheet: View {
             if let brand = product.brand, !brand.isEmpty {
                 LabeledContent(Strings.Scan.detailsBrand, value: brand)
             }
-            if let abv = product.abv {
+            if let abv = resolvedABV {
                 LabeledContent(Strings.Detail.abv, value: "\(abv.formatted())%")
+            }
+            if let age = resolvedAge {
+                LabeledContent(Strings.Detail.age, value: Strings.Detail.ageValue(age))
             }
             LabeledContent(Strings.Form.barcode, value: barcode)
             if let distillery = matchedDistillery {

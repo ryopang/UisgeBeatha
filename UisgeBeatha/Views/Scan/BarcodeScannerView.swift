@@ -27,6 +27,10 @@ struct BarcodeScannerView: UIViewControllerRepresentable {
         }
     }
 
+    static func dismantleUIViewController(_ scanner: DataScannerViewController, coordinator: Coordinator) {
+        scanner.stopScanning()
+    }
+
     func makeCoordinator() -> Coordinator {
         Coordinator(onScan: onScan)
     }

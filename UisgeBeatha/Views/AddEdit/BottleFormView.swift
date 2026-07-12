@@ -8,6 +8,7 @@ struct LookupPrefill: Sendable {
     var distilleryName = ""
     var region = ""
     var abv: Double?
+    var age: Int?
     var barcode: String?
     var stockPhotoURL: String?
 }
@@ -63,8 +64,9 @@ struct BottleFormView: View {
         _distilleryName = State(initialValue: bottle?.distilleryName ?? prefill?.distilleryName ?? "")
         _region = State(initialValue: bottle?.region ?? prefill?.region ?? "")
         _abv = State(initialValue: bottle?.abv ?? prefill?.abv)
+        let resolvedAge = bottle?.ageStatement ?? prefill?.age
         _isNAS = State(initialValue: bottle.map { $0.ageStatement == nil } ?? false)
-        _age = State(initialValue: bottle?.ageStatement)
+        _age = State(initialValue: resolvedAge)
         _caskType = State(initialValue: bottle?.caskType ?? "")
         _price = State(initialValue: bottle?.purchasePrice)
         _hasPurchaseDate = State(initialValue: bottle?.purchaseDate != nil)

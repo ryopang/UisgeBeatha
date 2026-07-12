@@ -34,6 +34,10 @@ struct RegionMapView: View {
                 .annotationTitles(.hidden)
             }
         }
+        // Flat, POI-free base map so region badges are the only thing
+        // competing for attention.
+        .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll, showsTraffic: false))
+        .mapControls {}
         .sheet(item: $selectedRegion) { region in
             RegionBottlesSheet(
                 region: region,
@@ -46,20 +50,27 @@ struct RegionMapView: View {
         Button {
             selectedRegion = region
         } label: {
-            VStack(spacing: 2) {
-                Text(region.displayName)
-                    .font(.caption.weight(.semibold))
+            VStack(spacing: 3) {
                 Text("\(count)")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(count == 0 ? AnyShapeStyle(.secondary) : AnyShapeStyle(region.accentColor))
+                    .font(.title3.weight(.heavy))
+                    .foregroundStyle(.white)
+                    .monospacedDigit()
+                    .frame(minWidth: 30, minHeight: 30)
+                    .background(
+                        count == 0 ? AnyShapeStyle(.gray) : AnyShapeStyle(region.accentColor),
+                        in: Circle()
+                    )
+                    .overlay(Circle().strokeBorder(.white.opacity(0.85), lineWidth: 1.5))
+                    .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
+                Text(region.displayName)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(.thickMaterial, in: Capsule())
+                    .shadow(color: .black.opacity(0.15), radius: 1, y: 1)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(.regularMaterial, in: Capsule())
-            .overlay(
-                Capsule().strokeBorder(region.accentColor.opacity(count == 0 ? 0.2 : 0.6), lineWidth: 1)
-            )
-            .opacity(count == 0 ? 0.55 : 1)
+            .opacity(count == 0 ? 0.7 : 1)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Strings.Map.badgeLabel(region: region.displayName, count: count))
