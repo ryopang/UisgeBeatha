@@ -34,3 +34,16 @@ Scope (per PRD section 9, Phase 2):
 Note: the PRD's empty state names a "Scan your first bottle" button; the scanner is Phase 4, so the button opens manual entry until then (same copy swap happens in Phase 4).
 
 Row tap opens the edit form in Phase 2; Phase 3 replaces this with the bottle detail push.
+
+# Phase 3 plan: Bottle detail, photos, rating, tasting notes, wheel
+
+Scope (per PRD section 9, Phase 3):
+
+1. **ImageStore** (`Support/ImageStore.swift`) — protocol + `LocalImageStore`: JPEGs downsampled to max 2000px long edge (~0.8 quality) in Application Support/Photos, 300px thumbnail generated alongside, filenames only in SwiftData, delete removes both files. ImageIO downsampling.
+2. **Bottle detail** (`Views/BottleDetail/`) — hero photo (user photo → stock photo AsyncImage → monogram placeholder) with Take Photo (camera; device only) and Choose Photo (PhotosPicker); facts grid; tappable status; half-star rating control (tap + VoiceOver adjustable); tasting notes newest-first; Edit/Delete in toolbar menu. Row tap in the list now pushes detail instead of opening the edit sheet.
+3. **Tasting notes** — editor sheet with Nose/Palate/Finish/Conclusion + editable date; note cards with relative dates; delete.
+4. **Tasting wheel** (`Views/Components/TastingWheelView.swift`) — original two-ring SwiftUI Canvas wheel: 8 categories × 3 descriptors, colors legible in both modes; reference-only sheet from the note editor.
+5. **Camera capture** — UIImagePickerController wrapper (camera unavailable in simulator; owner verifies on device).
+6. **Tests** — ImageStore round-trip/downsample/thumbnail/delete; rating formatting. UI driver extended: detail push, rating tap, note CRUD, photo via simulator photo library.
+
+Acceptance (PRD): photo persists across relaunch; replacing a photo deletes old files; rating adjustable via tap and VoiceOver; two notes display newest first; wheel renders in light and dark. Camera capture itself needs the owner's device.

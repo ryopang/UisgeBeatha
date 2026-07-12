@@ -52,6 +52,11 @@ XCR=$(ls -td ~/Library/Developer/Xcode/DerivedData/UisgeBeatha-*/Logs/Test/*.xcr
 xcrun xcresulttool export attachments --path "$XCR" --output-path <dir>   # manifest.json lists the .mp4
 ```
 
+PASSING runs keep no recording. To capture a specific screen from a passing
+drive, add inside the test:
+`let s = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); s.lifetime = .keepAlways; add(s)`
+then export attachments as above (manifest lists it by its `name`).
+
 ## Gotchas learned the hard way
 
 - XCUITest queries: the bottle row combines accessibility children; the status pill

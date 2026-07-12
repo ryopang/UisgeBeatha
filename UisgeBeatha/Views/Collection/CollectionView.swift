@@ -8,10 +8,11 @@ struct CollectionView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var bottles: [Bottle]
 
+    @Environment(\.imageStore) private var imageStore
+
     @AppStorage("collectionSortKey") private var sortKeyRawValue = CollectionSortKey.name.rawValue
     @State private var searchText = ""
     @State private var showingAddForm = false
-    @State private var bottleBeingEdited: Bottle?
     @State private var bottlePendingDelete: Bottle?
 
     private static let logger = Logger(subsystem: "com.ryo.UisgeBeatha", category: "Collection")
@@ -53,9 +54,6 @@ struct CollectionView: View {
             .sheet(isPresented: $showingAddForm) {
                 BottleFormView(bottle: nil)
             }
-            .sheet(item: $bottleBeingEdited) { bottle in
-                BottleFormView(bottle: bottle)
-            }
             .confirmationDialog(
                 Strings.Collection.deleteConfirmTitle,
                 isPresented: Binding(
@@ -66,6 +64,9 @@ struct CollectionView: View {
             ) {
                 Button(Strings.Collection.delete, role: .destructive) {
                     if let bottle = bottlePendingDelete {
+                        if let filename = bottle.userPhotoFilename {
+                            try? imageStore.delete(filename: filename)
+                        }
                         modelContext.delete(bottle)
                         persistChanges()
                     }
@@ -83,13 +84,11 @@ struct CollectionView: View {
     private var bottleList: some View {
         List {
             ForEach(visibleBottles) { bottle in
-                Button {
-                    // Phase 3 replaces this with a push to the bottle detail.
-                    bottleBeingEdited = bottle
+                NavigationLink {
+                    BottleDetailView(bottle: bottle)
                 } label: {
                     BottleRowView(bottle: bottle)
                 }
-                .buttonStyle(.plain)
                 .swipeActions(edge: .leading) {
                     Button(
                         Strings.Collection.statusSwipeLabel,
