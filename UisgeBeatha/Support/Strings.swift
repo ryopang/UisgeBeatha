@@ -11,7 +11,25 @@ nonisolated enum Strings {
 
     enum Tabs {
         static let collection = "Collection"
+        static let scan = "Scan"
         static let settings = "Settings"
+    }
+
+    enum Scan {
+        static let title = "Scan"
+        static let lookingUp = "Looking up…"
+        static let scanAgain = "Scan Again"
+        static let cameraUnavailable = "Scanning needs a camera. Enter the barcode digits instead."
+        static let barcodeField = "Barcode"
+        static let lookUp = "Look Up"
+        static let resultTitle = "Match Found"
+        static let addToCollection = "Add to Collection"
+        static let detailsOnly = "Details Only"
+        static let detailsName = "Product"
+        static let detailsBrand = "Brand"
+        static let detailsCategories = "Categories"
+        static let duplicateToast = "Already in your collection."
+        static let missNotice = "Not found in the database. Add it manually and it's saved for good."
     }
 
     enum Policy {
@@ -42,7 +60,8 @@ nonisolated enum Strings {
         static let addBottle = "Add Bottle"
         static let emptyTitle = "An Empty Shelf"
         static let emptyMessage = "Your collection starts with a single bottle."
-        static let emptyAction = "Add Your First Bottle"
+        static let emptyAction = "Scan Your First Bottle"
+        static let emptyManualAction = "Add Manually"
         static let deleteConfirmTitle = "Delete Bottle?"
         static let deleteConfirmMessage = "This removes the bottle and its tasting notes."
         static let delete = "Delete"
@@ -144,6 +163,8 @@ nonisolated enum Strings {
         static let aboutSection = "About"
         static let version = "Version"
         static let dataNotice = "Your collection stays on this device. Nothing is uploaded anywhere."
+        static let debugSection = "Debug"
+        static let lastLookupSource = "Last Lookup Source"
     }
 
     enum Accessibility {

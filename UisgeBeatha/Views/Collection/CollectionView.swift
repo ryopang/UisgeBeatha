@@ -9,6 +9,7 @@ struct CollectionView: View {
     @Query private var bottles: [Bottle]
 
     @Environment(\.imageStore) private var imageStore
+    @Environment(\.tabRouter) private var tabRouter
 
     @AppStorage("collectionSortKey") private var sortKeyRawValue = CollectionSortKey.name.rawValue
     @State private var searchText = ""
@@ -115,11 +116,14 @@ struct CollectionView: View {
         } description: {
             Text(Strings.Collection.emptyMessage)
         } actions: {
-            // Becomes the scan action once the scanner lands in Phase 4.
             Button(Strings.Collection.emptyAction) {
-                showingAddForm = true
+                tabRouter?.selection = .scan
             }
             .buttonStyle(.borderedProminent)
+            Button(Strings.Collection.emptyManualAction) {
+                showingAddForm = true
+            }
+            .buttonStyle(.bordered)
         }
     }
 

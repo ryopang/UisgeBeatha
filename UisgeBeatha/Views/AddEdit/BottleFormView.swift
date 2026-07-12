@@ -2,13 +2,29 @@ import OSLog
 import SwiftData
 import SwiftUI
 
+/// What a scan lookup pre-fills into the form (PRD F1 hit and miss paths).
+struct LookupPrefill: Sendable {
+    var name = ""
+    var distilleryName = ""
+    var region = ""
+    var abv: Double?
+    var barcode: String?
+    var stockPhotoURL: String?
+}
+
 /// Manual entry and edit form (PRD F2). Pass nil to create a new bottle.
 /// Edits are staged in local state and only applied on Save, so Cancel
 /// never leaves half-edited data behind.
 struct BottleFormView: View {
     let bottle: Bottle?
+    /// Pre-filled values from a scan lookup (new bottles only).
+    var prefill: LookupPrefill?
     /// True when the barcode came from a scan and must not be edited.
     var barcodeIsLocked = false
+    /// One-line banner, e.g. the lookup-miss notice.
+    var notice: String?
+    /// Called after a successful save, so scan sheets can dismiss the chain.
+    var onSaved: (() -> Void)?
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.distilleryStore) private var distilleryStore
@@ -31,13 +47,22 @@ struct BottleFormView: View {
 
     private static let logger = Logger(subsystem: "com.ryo.UisgeBeatha", category: "BottleForm")
 
-    init(bottle: Bottle?, barcodeIsLocked: Bool = false) {
+    init(
+        bottle: Bottle?,
+        prefill: LookupPrefill? = nil,
+        barcodeIsLocked: Bool = false,
+        notice: String? = nil,
+        onSaved: (() -> Void)? = nil
+    ) {
         self.bottle = bottle
+        self.prefill = prefill
         self.barcodeIsLocked = barcodeIsLocked
-        _name = State(initialValue: bottle?.name ?? "")
-        _distilleryName = State(initialValue: bottle?.distilleryName ?? "")
-        _region = State(initialValue: bottle?.region ?? "")
-        _abv = State(initialValue: bottle?.abv)
+        self.notice = notice
+        self.onSaved = onSaved
+        _name = State(initialValue: bottle?.name ?? prefill?.name ?? "")
+        _distilleryName = State(initialValue: bottle?.distilleryName ?? prefill?.distilleryName ?? "")
+        _region = State(initialValue: bottle?.region ?? prefill?.region ?? "")
+        _abv = State(initialValue: bottle?.abv ?? prefill?.abv)
         _isNAS = State(initialValue: bottle.map { $0.ageStatement == nil } ?? false)
         _age = State(initialValue: bottle?.ageStatement)
         _caskType = State(initialValue: bottle?.caskType ?? "")
@@ -45,7 +70,7 @@ struct BottleFormView: View {
         _hasPurchaseDate = State(initialValue: bottle?.purchaseDate != nil)
         _purchaseDate = State(initialValue: bottle?.purchaseDate ?? .now)
         _status = State(initialValue: bottle?.status ?? .sealed)
-        _barcode = State(initialValue: bottle?.barcode ?? "")
+        _barcode = State(initialValue: bottle?.barcode ?? prefill?.barcode ?? "")
     }
 
     private var canSave: Bool {
@@ -79,6 +104,13 @@ struct BottleFormView: View {
     var body: some View {
         NavigationStack {
             Form {
+                if let notice {
+                    Section {
+                        Label(notice, systemImage: "info.circle")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 Section(Strings.Form.bottleSection) {
                     TextField(Strings.Form.name, text: $name, prompt: Text(Strings.Form.namePlaceholder))
                     TextField(
@@ -209,11 +241,15 @@ struct BottleFormView: View {
         target.status = status
         target.barcode = barcode.isEmpty ? nil : barcode
         if bottle == nil {
+            // Keep the lookup's stock photo so rows and the detail hero can
+            // show it until the owner takes their own (PRD F4).
+            target.stockPhotoURL = prefill?.stockPhotoURL
             modelContext.insert(target)
         }
         do {
             try modelContext.save()
             dismiss()
+            onSaved?()
         } catch {
             Self.logger.error("Failed to save bottle: \(error)")
         }

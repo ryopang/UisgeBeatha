@@ -7,6 +7,9 @@ struct SettingsView: View {
         return version ?? "1.0"
     }
 
+    @AppStorage(CascadeBarcodeLookupService.debugSourceDefaultsKey)
+    private var lastLookupSource = "—"
+
     var body: some View {
         NavigationStack {
             Form {
@@ -15,6 +18,9 @@ struct SettingsView: View {
                     Text(Strings.Settings.dataNotice)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                }
+                Section(Strings.Settings.debugSection) {
+                    LabeledContent(Strings.Settings.lastLookupSource, value: lastLookupSource)
                 }
             }
             .navigationTitle(Strings.Settings.title)

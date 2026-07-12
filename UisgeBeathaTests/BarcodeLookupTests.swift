@@ -1,0 +1,160 @@
+import Foundation
+import Testing
+@testable import UisgeBeatha
+
+/// Phase 4: lookup cascade ordering, caching rules, and tier parsing.
+struct BarcodeLookupTests {
+
+    // MARK: - Mock tier
+
+    /// Scripted tier that records how often it was called.
+    final class MockTier: BarcodeLookupTier, @unchecked Sendable {
+        enum Behavior {
+            case hit(LookupProduct)
+            case definitiveMiss
+            case transportError
+        }
+
+        let tierName: String
+        let behavior: Behavior
+        private(set) var callCount = 0
+
+        init(_ tierName: String, _ behavior: Behavior) {
+            self.tierName = tierName
+            self.behavior = behavior
+        }
+
+        func lookup(barcode: String) async throws -> LookupProduct? {
+            callCount += 1
+            switch behavior {
+            case .hit(let product): return product
+            case .definitiveMiss: return nil
+            case .transportError: throw URLError(.notConnectedToInternet)
+            }
+        }
+    }
+
+    private let product = LookupProduct(name: "Lagavulin 16", brand: "Lagavulin", categoryTags: ["en:scotch-whisky"])
+
+    private func makeCache() -> DiskCache<LookupOutcome> {
+        DiskCache(
+            folderName: "test",
+            maxAge: 90 * 24 * 3600,
+            directory: FileManager.default.temporaryDirectory
+                .appendingPathComponent("LookupTests-\(UUID().uuidString)", isDirectory: true)
+        )
+    }
+
+    // MARK: - Cascade
+
+    @Test func firstTierHitStopsCascade() async {
+        let tier1 = MockTier("T1", .hit(product))
+        let tier2 = MockTier("T2", .hit(product))
+        let service = CascadeBarcodeLookupService(tiers: [tier1, tier2], cache: makeCache())
+
+        let result = await service.lookup(barcode: "123")
+        #expect(result.outcome == .hit(product))
+        #expect(result.source == "T1")
+        #expect(tier2.callCount == 0)
+    }
+
+    @Test func tierOneMissFallsThroughToTierTwo() async {
+        let tier1 = MockTier("T1", .definitiveMiss)
+        let tier2 = MockTier("T2", .hit(product))
+        let service = CascadeBarcodeLookupService(tiers: [tier1, tier2], cache: makeCache())
+
+        let result = await service.lookup(barcode: "123")
+        #expect(result.outcome == .hit(product))
+        #expect(result.source == "T2")
+    }
+
+    @Test func rateLimitSkipsSilentlyToMissPath() async {
+        let tier1 = MockTier("T1", .transportError)
+        let tier2 = MockTier("T2", .transportError)
+        let service = CascadeBarcodeLookupService(tiers: [tier1, tier2], cache: makeCache())
+
+        let result = await service.lookup(barcode: "123")
+        #expect(result.outcome == .miss)
+    }
+
+    @Test func hitsAreServedFromCacheOnRescan() async {
+        let cache = makeCache()
+        let tier1 = MockTier("T1", .hit(product))
+        let service = CascadeBarcodeLookupService(tiers: [tier1], cache: cache)
+
+        _ = await service.lookup(barcode: "123")
+        let second = await service.lookup(barcode: "123")
+        #expect(second.outcome == .hit(product))
+        #expect(second.source == "Cache")
+        #expect(tier1.callCount == 1, "Rescan must cost no network call")
+    }
+
+    @Test func definitiveMissesAreCachedToo() async {
+        let cache = makeCache()
+        let tier1 = MockTier("T1", .definitiveMiss)
+        let service = CascadeBarcodeLookupService(tiers: [tier1], cache: cache)
+
+        _ = await service.lookup(barcode: "123")
+        let second = await service.lookup(barcode: "123")
+        #expect(second.source == "Cache")
+        #expect(tier1.callCount == 1)
+    }
+
+    @Test func transportErrorsAreNeverCached() async {
+        let cache = makeCache()
+        let tier1 = MockTier("T1", .transportError)
+        let service = CascadeBarcodeLookupService(tiers: [tier1], cache: cache)
+
+        _ = await service.lookup(barcode: "123")
+        _ = await service.lookup(barcode: "123")
+        #expect(tier1.callCount == 2, "An offline miss must retry next time")
+    }
+
+    @Test func expiredCacheEntriesAreIgnored() async {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LookupTests-\(UUID().uuidString)", isDirectory: true)
+        let shortCache = DiskCache<LookupOutcome>(folderName: "t", maxAge: 0.01, directory: directory)
+        await shortCache.store(.hit(product), forKey: "123")
+        try? await Task.sleep(for: .milliseconds(50))
+        let cached = await shortCache.value(forKey: "123")
+        #expect(cached == nil)
+    }
+
+    // MARK: - Tier parsing
+
+    @Test func openFoodFactsParsesAHit() {
+        let json = """
+        {"status": 1, "product": {"product_name": "Glenlivet 12", "brands": "The Glenlivet",
+         "image_url": "https://example.org/x.jpg", "alcohol_by_volume": "40",
+         "categories_tags": ["en:scotch-whisky"]}}
+        """
+        let product = OpenFoodFactsTier.parse(Data(json.utf8))
+        #expect(product?.name == "Glenlivet 12")
+        #expect(product?.abv == 40)
+        #expect(product?.categoryTags == ["en:scotch-whisky"])
+    }
+
+    @Test func openFoodFactsStatusZeroIsAMiss() {
+        let json = #"{"status": 0, "product": null}"#
+        #expect(OpenFoodFactsTier.parse(Data(json.utf8)) == nil)
+    }
+
+    @Test func openFoodFactsEmptyNameIsAMiss() {
+        let json = #"{"status": 1, "product": {"product_name": ""}}"#
+        #expect(OpenFoodFactsTier.parse(Data(json.utf8)) == nil)
+    }
+
+    @Test func upcItemDBParsesFirstItem() {
+        let json = """
+        {"code": "OK", "items": [{"title": "Talisker 10 Single Malt", "brand": "Talisker",
+         "images": ["https://example.org/t.jpg"]}]}
+        """
+        let product = UPCItemDBTier.parse(Data(json.utf8))
+        #expect(product?.name == "Talisker 10 Single Malt")
+        #expect(product?.imageURL == "https://example.org/t.jpg")
+    }
+
+    @Test func upcItemDBEmptyItemsIsAMiss() {
+        #expect(UPCItemDBTier.parse(Data(#"{"code": "OK", "items": []}"#.utf8)) == nil)
+    }
+}

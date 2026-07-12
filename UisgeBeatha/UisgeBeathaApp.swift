@@ -38,7 +38,17 @@ struct UisgeBeathaApp: App {
         WindowGroup {
             RootTabView()
                 .environment(\.distilleryStore, distilleryStore)
+                .environment(\.barcodeLookup, Self.lookupService())
         }
         .modelContainer(modelContainer)
+    }
+
+    private static func lookupService() -> any BarcodeLookupServicing {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-uiTestLookupStub") {
+            return StubBarcodeLookupService()
+        }
+        #endif
+        return CascadeBarcodeLookupService()
     }
 }
