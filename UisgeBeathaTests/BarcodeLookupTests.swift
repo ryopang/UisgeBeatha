@@ -157,4 +157,27 @@ struct BarcodeLookupTests {
     @Test func upcItemDBEmptyItemsIsAMiss() {
         #expect(UPCItemDBTier.parse(Data(#"{"code": "OK", "items": []}"#.utf8)) == nil)
     }
+
+    // MARK: - Label text fallback
+
+    @Test func labelParserExtractsAgeFromCommonPhrasings() {
+        #expect(WhiskyLabelParser.age(from: "Lagavulin 16 Year Old Islay Single Malt") == 16)
+        #expect(WhiskyLabelParser.age(from: "Talisker 10YO Single Malt") == 10)
+        #expect(WhiskyLabelParser.age(from: "Glenfiddich 18 Years") == 18)
+        #expect(WhiskyLabelParser.age(from: "Highland Park 12-Year-Old") == 12)
+    }
+
+    @Test func labelParserAgeIsNilWithoutAUnitWord() {
+        #expect(WhiskyLabelParser.age(from: "Talisker 10 Single Malt") == nil)
+    }
+
+    @Test func labelParserExtractsABVFromPercentSign() {
+        #expect(WhiskyLabelParser.abv(from: "Ardbeg 10 Year Old 46%") == 46)
+        #expect(WhiskyLabelParser.abv(from: "Lagavulin 16 43.0% Vol") == 43.0)
+    }
+
+    @Test func labelParserABVIgnoresImplausibleValues() {
+        #expect(WhiskyLabelParser.abv(from: "Bottled at 5% by an unrelated product") == nil)
+        #expect(WhiskyLabelParser.abv(from: "No percentage here") == nil)
+    }
 }

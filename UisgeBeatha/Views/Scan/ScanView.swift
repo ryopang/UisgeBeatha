@@ -14,6 +14,12 @@ struct ScanView: View {
     @State private var isLookingUp = false
     @State private var showingRejection = false
     @State private var manualBarcode = ""
+    /// Forces a brand-new DataScannerViewController each time the scanner
+    /// reappears after being covered by a sheet. Apple's automatic
+    /// pause/resume-on-cover behavior is unreliable when the scanner is
+    /// wrapped in a SwiftUI representable, so a fresh instance (rather than
+    /// trusting `isScanning`) is what actually resumes detection.
+    @State private var scannerResetToken = UUID()
 
     enum ScanSheet: Identifiable {
         case result(LookupResult, LookupProduct)
@@ -38,6 +44,7 @@ struct ScanView: View {
                     lookingUpView
                 } else if BarcodeScannerView.isSupported {
                     BarcodeScannerView { process(barcode: $0) }
+                        .id(scannerResetToken)
                         .ignoresSafeArea()
                 } else {
                     manualEntryFallback
@@ -45,6 +52,11 @@ struct ScanView: View {
             }
             .navigationTitle(Strings.Scan.title)
             .navigationBarTitleDisplayMode(.inline)
+            .onChange(of: activeSheet == nil) { _, isDismissed in
+                if isDismissed {
+                    scannerResetToken = UUID()
+                }
+            }
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {
                 case .result(let result, let product):

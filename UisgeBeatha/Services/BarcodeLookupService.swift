@@ -223,6 +223,38 @@ struct UPCItemDBTier: BarcodeLookupTier {
     }
 }
 
+// MARK: - Label text fallback
+
+/// Best-effort ABV / age extraction from a product name. UPCitemdb never
+/// returns a structured ABV field and neither tier returns age at all, but
+/// whisky listing titles almost always spell both out ("Lagavulin 16 Year
+/// Old ... 43%"), so this backstops the structured fields when they're
+/// missing.
+nonisolated enum WhiskyLabelParser {
+    static func abv(from name: String) -> Double? {
+        guard let regex = try? NSRegularExpression(pattern: #"(\d{1,2}(?:\.\d)?)\s*%"#) else {
+            return nil
+        }
+        guard let value = firstMatch(regex, in: name), (20...80).contains(value) else { return nil }
+        return value
+    }
+
+    static func age(from name: String) -> Int? {
+        guard let regex = try? NSRegularExpression(
+            pattern: #"(\d{1,2})\s*[- ]?(?:years?|yrs?|yo)\b"#, options: [.caseInsensitive]
+        ) else { return nil }
+        guard let value = firstMatch(regex, in: name), (3...50).contains(value) else { return nil }
+        return Int(value)
+    }
+
+    private static func firstMatch(_ regex: NSRegularExpression, in text: String) -> Double? {
+        let range = NSRange(text.startIndex..., in: text)
+        guard let match = regex.firstMatch(in: text, range: range),
+              let numberRange = Range(match.range(at: 1), in: text) else { return nil }
+        return Double(text[numberRange])
+    }
+}
+
 // MARK: - Environment
 
 extension EnvironmentValues {
