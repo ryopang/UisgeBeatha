@@ -4,6 +4,16 @@ import VisionKit
 
 /// VisionKit barcode scanner configured for EAN-13 (which also carries
 /// UPC-A) per PRD F1. Only usable on a physical device.
+///
+/// Restarting a scanning session that's merely been covered by a sheet
+/// (rather than removed from the view hierarchy) is unreliable — the
+/// camera can come back jittery or stop recognizing barcodes entirely.
+/// So this view relies on its caller (ScanView) to fully unmount it
+/// whenever any sheet is open, forcing a genuinely fresh instance —
+/// SwiftUI's own sizing of a freshly-returned UIViewController's view is
+/// what keeps the camera preview correctly framed; don't reintroduce a
+/// custom container around this to hook view-lifecycle callbacks without
+/// very deliberately re-verifying camera framing on-device.
 struct BarcodeScannerView: UIViewControllerRepresentable {
     let onScan: (String) -> Void
 
@@ -11,73 +21,28 @@ struct BarcodeScannerView: UIViewControllerRepresentable {
         DataScannerViewController.isSupported && DataScannerViewController.isAvailable
     }
 
-    func makeUIViewController(context: Context) -> ScannerContainerViewController {
+    func makeUIViewController(context: Context) -> DataScannerViewController {
         let scanner = DataScannerViewController(
             recognizedDataTypes: [.barcode(symbologies: [.ean13, .ean8])],
             qualityLevel: .fast,
             isHighlightingEnabled: true
         )
         scanner.delegate = context.coordinator
-        return ScannerContainerViewController(scanner: scanner)
+        return scanner
     }
 
-    func updateUIViewController(_ container: ScannerContainerViewController, context: Context) {
-        container.resumeIfNeeded()
+    func updateUIViewController(_ scanner: DataScannerViewController, context: Context) {
+        if !scanner.isScanning {
+            try? scanner.startScanning()
+        }
     }
 
-    static func dismantleUIViewController(_ container: ScannerContainerViewController, coordinator: Coordinator) {
-        container.scanner.stopScanning()
+    static func dismantleUIViewController(_ scanner: DataScannerViewController, coordinator: Coordinator) {
+        scanner.stopScanning()
     }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(onScan: onScan)
-    }
-
-    /// Hosts the DataScannerViewController as a child view controller so we
-    /// get reliable `viewDidAppear` / `viewWillDisappear` calls when a sheet
-    /// covers and then dismisses this screen. DataScannerViewController
-    /// itself can't be subclassed (it's `public`, not `open`), and calling
-    /// `startScanning()` from SwiftUI's `updateUIViewController` alone is
-    /// unreliable — its timing relative to the view actually appearing in
-    /// the window isn't guaranteed, especially right after a sheet's dismiss
-    /// animation. This is the hook that makes scanning reliably resume after
-    /// Cancel or Save on a sheet, not just on first appearance.
-    final class ScannerContainerViewController: UIViewController {
-        let scanner: DataScannerViewController
-
-        init(scanner: DataScannerViewController) {
-            self.scanner = scanner
-            super.init(nibName: nil, bundle: nil)
-        }
-
-        @available(*, unavailable)
-        required init?(coder: NSCoder) {
-            fatalError("init(coder:) is not used")
-        }
-
-        override func viewDidLoad() {
-            super.viewDidLoad()
-            addChild(scanner)
-            scanner.view.frame = view.bounds
-            scanner.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            view.addSubview(scanner.view)
-            scanner.didMove(toParent: self)
-        }
-
-        override func viewDidAppear(_ animated: Bool) {
-            super.viewDidAppear(animated)
-            resumeIfNeeded()
-        }
-
-        override func viewWillDisappear(_ animated: Bool) {
-            super.viewWillDisappear(animated)
-            scanner.stopScanning()
-        }
-
-        func resumeIfNeeded() {
-            guard !scanner.isScanning else { return }
-            try? scanner.startScanning()
-        }
     }
 
     final class Coordinator: NSObject, DataScannerViewControllerDelegate {
