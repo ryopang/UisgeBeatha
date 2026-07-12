@@ -95,6 +95,21 @@ nonisolated enum Strings {
         static let cancel = "Cancel"
     }
 
+    enum Map {
+        static let listMode = "List"
+        static let mapMode = "Map"
+        static let viewToggle = "View"
+        static let emptyRegionTitle = "Nothing Here Yet"
+
+        static func emptyRegionMessage(region: String) -> String {
+            "No \(region) bottle in the collection yet."
+        }
+
+        static func badgeLabel(region: String, count: Int) -> String {
+            count == 1 ? "\(region), 1 bottle" : "\(region), \(count) bottles"
+        }
+    }
+
     enum Detail {
         static let more = "More"
         static let edit = "Edit"

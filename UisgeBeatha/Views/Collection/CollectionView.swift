@@ -11,7 +11,20 @@ struct CollectionView: View {
     @Environment(\.imageStore) private var imageStore
     @Environment(\.tabRouter) private var tabRouter
 
+    enum ViewMode: String, CaseIterable {
+        case list
+        case map
+
+        var label: String {
+            switch self {
+            case .list: Strings.Map.listMode
+            case .map: Strings.Map.mapMode
+            }
+        }
+    }
+
     @AppStorage("collectionSortKey") private var sortKeyRawValue = CollectionSortKey.name.rawValue
+    @AppStorage("collectionViewMode") private var viewModeRawValue = ViewMode.list.rawValue
     @State private var searchText = ""
     @State private var showingAddForm = false
     @State private var bottlePendingDelete: Bottle?
@@ -32,13 +45,32 @@ struct CollectionView: View {
         return sortKey.sorted(filtered)
     }
 
+    private var viewMode: ViewMode {
+        ViewMode(rawValue: viewModeRawValue) ?? .list
+    }
+
     var body: some View {
         NavigationStack {
-            Group {
-                if bottles.isEmpty {
-                    emptyState
-                } else {
-                    bottleList
+            VStack(spacing: 0) {
+                Picker(Strings.Map.viewToggle, selection: $viewModeRawValue) {
+                    ForEach(ViewMode.allCases, id: \.rawValue) { mode in
+                        Text(mode.label).tag(mode.rawValue)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .padding(.bottom, 8)
+                Group {
+                    switch viewMode {
+                    case .list:
+                        if bottles.isEmpty {
+                            emptyState
+                        } else {
+                            bottleList
+                        }
+                    case .map:
+                        RegionMapView(bottles: Array(bottles))
+                    }
                 }
             }
             .navigationTitle(Strings.Collection.title)
