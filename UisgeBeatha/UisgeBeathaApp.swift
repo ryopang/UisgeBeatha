@@ -40,6 +40,7 @@ struct UisgeBeathaApp: App {
                 .environment(\.distilleryStore, distilleryStore)
                 .environment(\.barcodeLookup, Self.lookupService())
                 .environment(\.wikipedia, Self.wikipediaService())
+                .environment(\.labelOCR, Self.labelOCRService())
         }
         .modelContainer(modelContainer)
     }
@@ -60,5 +61,14 @@ struct UisgeBeathaApp: App {
         }
         #endif
         return WikipediaService()
+    }
+
+    private static func labelOCRService() -> any LabelOCRServicing {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-uiTestLookupStub") {
+            return StubLabelOCRService()
+        }
+        #endif
+        return VisionLabelOCRService()
     }
 }

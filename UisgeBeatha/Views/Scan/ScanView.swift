@@ -68,7 +68,8 @@ struct ScanView: View {
                         bottle: nil,
                         prefill: LookupPrefill(barcode: barcode),
                         barcodeIsLocked: true,
-                        notice: Strings.Scan.missNotice
+                        notice: Strings.Scan.missNotice,
+                        offersLabelScan: true
                     )
                 case .duplicate(let bottle):
                     DuplicateBottleSheet(bottle: bottle)

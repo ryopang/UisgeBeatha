@@ -24,11 +24,15 @@ struct BottleFormView: View {
     var barcodeIsLocked = false
     /// One-line banner, e.g. the lookup-miss notice.
     var notice: String?
+    /// True only for the barcode-miss path: offers a "Scan the Label"
+    /// button that reads brand/name/age/ABV off a label photo via OCR.
+    var offersLabelScan = false
     /// Called after a successful save, so scan sheets can dismiss the chain.
     var onSaved: (() -> Void)?
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.distilleryStore) private var distilleryStore
+    @Environment(\.labelOCR) private var labelOCR
     @Environment(\.dismiss) private var dismiss
 
     @State private var name: String
@@ -43,6 +47,9 @@ struct BottleFormView: View {
     @State private var purchaseDate: Date
     @State private var status: BottleStatus
     @State private var barcode: String
+    @State private var showingLabelCamera = false
+    @State private var isScanningLabel = false
+    @State private var labelScanBanner: String?
 
     @FocusState private var distilleryFieldFocused: Bool
 
@@ -53,12 +60,14 @@ struct BottleFormView: View {
         prefill: LookupPrefill? = nil,
         barcodeIsLocked: Bool = false,
         notice: String? = nil,
+        offersLabelScan: Bool = false,
         onSaved: (() -> Void)? = nil
     ) {
         self.bottle = bottle
         self.prefill = prefill
         self.barcodeIsLocked = barcodeIsLocked
         self.notice = notice
+        self.offersLabelScan = offersLabelScan
         self.onSaved = onSaved
         _name = State(initialValue: bottle?.name ?? prefill?.name ?? "")
         _distilleryName = State(initialValue: bottle?.distilleryName ?? prefill?.distilleryName ?? "")
@@ -111,6 +120,23 @@ struct BottleFormView: View {
                         Label(notice, systemImage: "info.circle")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
+                        if offersLabelScan, UIImagePickerController.isSourceTypeAvailable(.camera) {
+                            Button {
+                                showingLabelCamera = true
+                            } label: {
+                                if isScanningLabel {
+                                    Label(Strings.Scan.lookingUp, systemImage: "text.viewfinder")
+                                } else {
+                                    Label(Strings.Form.scanLabel, systemImage: "text.viewfinder")
+                                }
+                            }
+                            .disabled(isScanningLabel)
+                        }
+                        if let labelScanBanner {
+                            Text(labelScanBanner)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
                 Section(Strings.Form.bottleSection) {
@@ -206,6 +232,16 @@ struct BottleFormView: View {
                 }
             }
         }
+        .fullScreenCover(isPresented: $showingLabelCamera) {
+            CameraPicker { image in
+                Task {
+                    isScanningLabel = true
+                    await applyLabelScan(image)
+                    isScanningLabel = false
+                }
+            }
+            .ignoresSafeArea()
+        }
     }
 
     private var regionPicker: some View {
@@ -221,6 +257,31 @@ struct BottleFormView: View {
         distilleryName = suggestion.name
         region = suggestion.region
         distilleryFieldFocused = false
+    }
+
+    /// Applies whatever OCR could read off the label. Only fills fields
+    /// that got a new value — never blanks something the person already
+    /// typed just because this particular photo didn't confirm it.
+    private func applyLabelScan(_ image: UIImage) async {
+        do {
+            let lines = try await labelOCR.recognizeText(in: image)
+            guard let result = LabelParser.parse(lines: lines, distilleryStore: distilleryStore) else {
+                labelScanBanner = Strings.Form.labelScanFailure
+                return
+            }
+            if !result.name.isEmpty { name = result.name }
+            if !result.distilleryName.isEmpty { distilleryName = result.distilleryName }
+            if !result.region.isEmpty { region = result.region }
+            if let abv = result.abv { self.abv = abv }
+            if let age = result.age {
+                self.age = age
+                isNAS = false
+            }
+            labelScanBanner = Strings.Form.labelScanSuccess
+        } catch {
+            Self.logger.error("Label OCR failed: \(error)")
+            labelScanBanner = Strings.Form.labelScanFailure
+        }
     }
 
     private func save() {

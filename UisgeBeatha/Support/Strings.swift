@@ -93,6 +93,9 @@ nonisolated enum Strings {
         static let barcode = "Barcode"
         static let save = "Save"
         static let cancel = "Cancel"
+        static let scanLabel = "Scan the Label"
+        static let labelScanSuccess = "Read from the label — please check the details."
+        static let labelScanFailure = "Couldn't read the label. Try a closer, well-lit photo, or enter the details manually."
     }
 
     enum Map {
