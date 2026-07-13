@@ -24,9 +24,14 @@ struct BottleFormView: View {
     var barcodeIsLocked = false
     /// One-line banner, e.g. the lookup-miss notice.
     var notice: String?
-    /// True only for the barcode-miss path: offers a "Scan the Label"
-    /// button that reads brand/name/age/ABV off a label photo via OCR.
+    /// True for the barcode-miss path and the "scan the label instead"
+    /// entry point: offers a "Scan the Label" button that reads
+    /// brand/name/age/ABV off a label photo via OCR.
     var offersLabelScan = false
+    /// True when the person chose "Scan the Label" before any barcode
+    /// attempt (from the live scanner overlay) rather than after a miss —
+    /// skips the extra tap and opens the camera immediately.
+    var autoLaunchLabelCamera = false
     /// Called after a successful save, so scan sheets can dismiss the chain.
     var onSaved: (() -> Void)?
 
@@ -61,6 +66,7 @@ struct BottleFormView: View {
         barcodeIsLocked: Bool = false,
         notice: String? = nil,
         offersLabelScan: Bool = false,
+        autoLaunchLabelCamera: Bool = false,
         onSaved: (() -> Void)? = nil
     ) {
         self.bottle = bottle
@@ -68,6 +74,7 @@ struct BottleFormView: View {
         self.barcodeIsLocked = barcodeIsLocked
         self.notice = notice
         self.offersLabelScan = offersLabelScan
+        self.autoLaunchLabelCamera = autoLaunchLabelCamera
         self.onSaved = onSaved
         _name = State(initialValue: bottle?.name ?? prefill?.name ?? "")
         _distilleryName = State(initialValue: bottle?.distilleryName ?? prefill?.distilleryName ?? "")
@@ -115,11 +122,13 @@ struct BottleFormView: View {
     var body: some View {
         NavigationStack {
             Form {
-                if let notice {
+                if notice != nil || offersLabelScan {
                     Section {
-                        Label(notice, systemImage: "info.circle")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                        if let notice {
+                            Label(notice, systemImage: "info.circle")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
                         if offersLabelScan, UIImagePickerController.isSourceTypeAvailable(.camera) {
                             Button {
                                 showingLabelCamera = true
@@ -241,6 +250,11 @@ struct BottleFormView: View {
                 }
             }
             .ignoresSafeArea()
+        }
+        .task {
+            if autoLaunchLabelCamera {
+                showingLabelCamera = true
+            }
         }
     }
 

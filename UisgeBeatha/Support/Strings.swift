@@ -30,6 +30,7 @@ nonisolated enum Strings {
         static let detailsCategories = "Categories"
         static let duplicateToast = "Already in your collection."
         static let missNotice = "Not found in the database. Add it manually and it's saved for good."
+        static let noBarcodeLabelPrompt = "No barcode? Scan the label instead"
     }
 
     enum Policy {
