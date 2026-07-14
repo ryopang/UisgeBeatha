@@ -30,6 +30,7 @@ nonisolated enum Strings {
         static let detailsCategories = "Categories"
         static let duplicateToast = "Already in your collection."
         static let missNotice = "Not found in the database. Add it manually and it's saved for good."
+        static let noBarcodeLabelPrompt = "No barcode? Scan the label instead"
     }
 
     enum Policy {
@@ -93,6 +94,9 @@ nonisolated enum Strings {
         static let barcode = "Barcode"
         static let save = "Save"
         static let cancel = "Cancel"
+        static let scanLabel = "Scan the Label"
+        static let labelScanSuccess = "Read from the label — please check the details."
+        static let labelScanFailure = "Couldn't read the label. Try a closer, well-lit photo, or enter the details manually."
     }
 
     enum Map {

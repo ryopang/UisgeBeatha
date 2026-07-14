@@ -19,12 +19,17 @@ struct ScanView: View {
         case result(LookupResult, LookupProduct)
         case manualEntry(barcode: String)
         case duplicate(Bottle)
+        /// Chosen proactively from the live scanner, before any barcode
+        /// attempt — no barcode to lock or notice to show, and the label
+        /// camera opens immediately instead of waiting for a second tap.
+        case labelEntry
 
         var id: String {
             switch self {
             case .result(let result, _): "result-\(result.barcode)"
             case .manualEntry(let barcode): "manual-\(barcode)"
             case .duplicate(let bottle): "duplicate-\(bottle.id)"
+            case .labelEntry: "label-entry"
             }
         }
     }
@@ -49,6 +54,10 @@ struct ScanView: View {
                 } else if BarcodeScannerView.isSupported {
                     BarcodeScannerView { process(barcode: $0) }
                         .ignoresSafeArea()
+                        .overlay(alignment: .bottom) {
+                            noBarcodeButton
+                                .padding(.bottom, 24)
+                        }
                 } else {
                     manualEntryFallback
                 }
@@ -68,16 +77,39 @@ struct ScanView: View {
                         bottle: nil,
                         prefill: LookupPrefill(barcode: barcode),
                         barcodeIsLocked: true,
-                        notice: Strings.Scan.missNotice
+                        notice: Strings.Scan.missNotice,
+                        offersLabelScan: true
                     )
                 case .duplicate(let bottle):
                     DuplicateBottleSheet(bottle: bottle)
+                case .labelEntry:
+                    BottleFormView(
+                        bottle: nil,
+                        offersLabelScan: true,
+                        autoLaunchLabelCamera: true
+                    )
                 }
             }
         }
     }
 
     // MARK: - States
+
+    /// Secondary, low-key affordance on the live scanner — barcode stays
+    /// the obvious primary path, this just means someone with a damaged
+    /// or missing barcode doesn't have to sit through a doomed scan first.
+    private var noBarcodeButton: some View {
+        Button {
+            activeSheet = .labelEntry
+        } label: {
+            Text(Strings.Scan.noBarcodeLabelPrompt)
+                .font(.footnote.weight(.medium))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(.regularMaterial, in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
 
     private var lookingUpView: some View {
         VStack(spacing: 12) {
