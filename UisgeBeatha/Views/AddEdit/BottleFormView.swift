@@ -38,6 +38,7 @@ struct BottleFormView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.distilleryStore) private var distilleryStore
     @Environment(\.labelOCR) private var labelOCR
+    @Environment(\.stockPhotoBackfill) private var stockPhotoBackfill
     @Environment(\.dismiss) private var dismiss
 
     @State private var name: String
@@ -317,7 +318,8 @@ struct BottleFormView: View {
         target.purchaseDate = hasPurchaseDate ? purchaseDate : nil
         target.status = status
         target.barcode = barcode.isEmpty ? nil : barcode
-        if bottle == nil {
+        let isNewBottle = bottle == nil
+        if isNewBottle {
             // Keep the lookup's stock photo so rows and the detail hero can
             // show it until the owner takes their own (PRD F4).
             target.stockPhotoURL = prefill?.stockPhotoURL
@@ -327,6 +329,13 @@ struct BottleFormView: View {
             try modelContext.save()
             dismiss()
             onSaved?()
+            // Label-OCR and fully manual entries never got a stock photo
+            // from a barcode hit — best-effort backfill by name/distillery.
+            // The detail view surfaces its progress (StockPhotoBackfill
+            // tracks it by bottle ID, independent of this view's lifetime).
+            if isNewBottle, target.stockPhotoURL == nil {
+                stockPhotoBackfill?.fetch(for: target, modelContext: modelContext)
+            }
         } catch {
             Self.logger.error("Failed to save bottle: \(error)")
         }

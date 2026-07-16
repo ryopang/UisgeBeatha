@@ -9,9 +9,10 @@ Scan a bottle's barcode or enter it by hand, and Uisge Beatha keeps your collect
 - **Barcode scanning** — point the camera at a bottle (EAN-13/EAN-8 via VisionKit). Lookups cascade through Open Food Facts, then UPCitemdb, with a 90-day on-disk cache so a rescan never hits the network. No camera? A manual barcode entry field takes over.
 - **Label OCR fallback** — when a barcode comes back with no match, a "Scan the Label" button reads the bottle's own label via on-device text recognition (Vision) to guess the distillery, region, name, age, and ABV — the same best-effort text parsing the barcode path uses, just sourced from a photo instead of a database. Also offered proactively: a low-key "No barcode? Scan the label instead" button sits on the live scanner itself, so a damaged or missing barcode doesn't require sitting through a doomed scan first. Always a fill-in-and-confirm assist; the form stays fully editable.
 - **Scotch gate** — looked-up products that are clearly not scotch (bourbon, rye, Irish whiskey…) are rejected with a friendly message and never enter the collection. Ambiguous results pass through to manual confirmation rather than being rejected.
-- **Collection list** — searchable, sortable (name / distillery / region), with region-coloured thumbnails, status pills (Sealed → Open → Finished, cycled by swipe or tap), and half-star ratings.
-- **Region map** — a MapKit view of Scotland with a badge at each region's centroid showing your bottle count there; tap a badge to browse that region's bottles.
+- **Collection list** — searchable, sortable (name / distillery / region), with region-coloured thumbnails and half-star ratings. Status (Sealed → Open → Finished) cycles via a leading swipe action and shows in the bottle detail screen rather than cluttering the row.
+- **Region map** — a MapKit view of Scotland with a badge at each region's centroid showing your bottle count there, a small "N Bottles" summary pill, and tap-a-badge browsing of that region's bottles. List-only controls (sort, search, add) stay off this screen so the map gets the full frame.
 - **Bottle detail** — hero photo (your camera shot, a stock photo from the lookup, or a monogram placeholder), facts grid, tappable status, and a half-star rating control that also works via VoiceOver adjustment.
+- **Stock-photo backfill** — bottles that never got an image from a barcode lookup (label OCR or fully manual entry) get a best-effort photo searched by name, distillery, and age: Wikimedia Commons first, Open Food Facts as fallback, broadening the query automatically if the specific bottle name comes up empty everywhere. Runs on its own right after saving, and is always available again from a "look up photo" button in the detail view — a person's own photo still always wins.
 - **Tasting notes** — dated Nose / Palate / Finish / Conclusion entries, newest first, with an original SwiftUI-drawn flavour wheel (8 categories × 24 descriptors) on hand while you write.
 - **Distillery knowledge** — 126 bundled Scottish distilleries with region, coordinates, founding year, and owner; fuzzy name matching powers form autocomplete, and the detail screen enriches the card with a Wikipedia summary (30-day cache) and a Read-more link.
 - **Duplicate detection** — scanning a barcode you already own jumps straight to that bottle instead of adding a twin.
@@ -30,6 +31,7 @@ Scan a bottle's barcode or enter it by hand, and Uisge Beatha keeps your collect
   - `WikipediaServicing` — REST summary endpoint with title-candidate fallback and a 30-day cache.
   - `ImageStore` — all photo I/O goes through this protocol. `LocalImageStore` downsamples JPEGs to 2000 px via ImageIO, always writes a 300 px thumbnail, and stores only filenames in SwiftData.
   - `LabelOCRServicing` — `VisionLabelOCRService` runs on-device text recognition on a label photo; the recognition pass runs `nonisolated` so it can't block the main actor the way a naive implementation would.
+  - `ProductImageSearching` — `CascadeImageSearchService` walks Wikimedia Commons (mime-filtered so a video or PDF can't win a search) then Open Food Facts, broadening the query from the full bottle name down to distillery-alone if a specific search misses everywhere. `StockPhotoBackfill` tracks in-flight/failed lookups per bottle so the UI can show a spinner or a failure notice instead of a silent non-event; results cache for 90 days, bypassable for an explicit retry.
   - DEBUG stub implementations are swapped in by a launch argument so UI tests run deterministic and offline.
 - **`DiskCache<Value>`** — a small generic actor for JSON-file caching with per-cache expiry, shared by the lookup and Wikipedia services.
 - **One strings file** — every user-facing string lives in `Strings.swift` (always "Whisky", never "Whiskey").
@@ -38,7 +40,7 @@ Scan a bottle's barcode or enter it by hand, and Uisge Beatha keeps your collect
 ```
 UisgeBeatha/
 ├── Models/        Bottle, TastingNote, RegionCatalog, CollectionPolicy, Distillery
-├── Services/      BarcodeLookupService, LabelOCRService, WikipediaService, DistilleryStore, ExportService
+├── Services/      BarcodeLookupService, LabelOCRService, ProductImageSearchService, WikipediaService, DistilleryStore, ExportService
 ├── Support/       ImageStore, DiskCache, Strings, environment keys
 ├── Views/
 │   ├── Collection/    list, sort, region map
@@ -63,7 +65,7 @@ All six planned build phases are complete and merged to `main`:
 | 5 | Region map with centroid badges |
 | 6 | Wikipedia card, JSON/CSV export, original app icon, accessibility audits |
 
-Verified with 67 unit tests (Swift Testing) across 10 suites plus 5 end-to-end XCUITest flows, run green on fresh installs in light mode, dark mode, and at accessibility-XL Dynamic Type. Camera-dependent acceptance (live photo capture, real barcode scanning, and label OCR) requires a physical device.
+Verified with 97 unit tests (Swift Testing) across 11 suites plus 5 end-to-end XCUITest flows, run green on fresh installs in light mode, dark mode, and at accessibility-XL Dynamic Type. Camera-dependent acceptance (live photo capture, real barcode scanning, and label OCR) requires a physical device.
 
 Planned but deliberately out of v1: CloudKit sync, a stats dashboard, and world whisky — the schema, region catalog, and policy design above exist to keep those cheap.
 
@@ -78,6 +80,14 @@ Device testing surfaced scan-flow bugs the simulator can't reproduce (it has no 
 One iteration briefly regressed live camera scanning (a custom container view controller sized the camera preview to zero at layout time); that was reverted in favor of the simpler approach that was proven working on-device. Real-camera behavior remains the one thing that can only be confirmed on a physical device, not in CI or the simulator.
 
 Added since v1.0: the label OCR fallback described above, for when a barcode lookup comes back empty.
+
+Also added since v1.0: automatic + on-demand stock-photo backfill for bottles that never got an image from a barcode lookup (label OCR / fully manual entries), described above. Building it surfaced a few real bugs worth noting:
+
+- **Wrong-media-type matches** — Commons' File namespace also holds video, audio, and PDFs; an unfiltered search could return a "Making malt whisky" video ahead of an actual bottle photo. Fixed by filtering results to `image/*` mime types.
+- **Silent double-encoding** — `URL(string:)` re-encodes an entire query string (mangling an already-percent-encoded search term) the moment that string contains any other unescaped special character. This was the direct cause of the Wikimedia search looking like it always found nothing. Fixed by building URLs with `URLComponents` instead of manual percent-encoding + string interpolation.
+- **Cache didn't distinguish a retry from the original lookup** — pressing "look up photo" again just replayed the first cached answer, hit or miss. A retry now explicitly bypasses the cache read (a fresh hit still refreshes the cache for later automatic lookups).
+
+Collection screen: sort, search, and add now only appear in list view — none of them apply to the region map. The List/Map toggle moved into the toolbar (and widened), reclaiming the row it used to occupy so the map gets the full screen. List rows no longer show the sealed/open/finished status pill (still visible, and still changeable by swipe, just not on the row); the region tag moved inline next to the distillery name instead of stranding alone on its own line.
 
 ## Building
 

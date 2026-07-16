@@ -51,36 +51,45 @@ struct CollectionView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                Picker(Strings.Map.viewToggle, selection: $viewModeRawValue) {
-                    ForEach(ViewMode.allCases, id: \.rawValue) { mode in
-                        Text(mode.label).tag(mode.rawValue)
+            Group {
+                switch viewMode {
+                case .list:
+                    if bottles.isEmpty {
+                        emptyState
+                    } else {
+                        bottleList
                     }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                .padding(.bottom, 8)
-                Group {
-                    switch viewMode {
-                    case .list:
-                        if bottles.isEmpty {
-                            emptyState
-                        } else {
-                            bottleList
-                        }
-                    case .map:
-                        RegionMapView(bottles: Array(bottles))
-                    }
+                case .map:
+                    // No sort, search, or add in map mode — none apply to a
+                    // region map, and dropping them (plus the dedicated
+                    // toggle row list mode still needs) gives the map the
+                    // full screen below the nav bar.
+                    RegionMapView(bottles: Array(bottles))
                 }
             }
             .navigationTitle(Strings.Collection.title)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    sortMenu
+                ToolbarItem(placement: .principal) {
+                    Picker(Strings.Map.viewToggle, selection: $viewModeRawValue) {
+                        ForEach(ViewMode.allCases, id: \.rawValue) { mode in
+                            Text(mode.label).tag(mode.rawValue)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    // minWidth, not maxWidth: a segmented control sizes to
+                    // fit its labels by default, so a *maximum* alone never
+                    // actually stretched it — only a minimum forces the
+                    // extra width.
+                    .frame(minWidth: 280)
                 }
-                ToolbarItem(placement: .primaryAction) {
-                    Button(Strings.Collection.addBottle, systemImage: "plus") {
-                        showingAddForm = true
+                if viewMode == .list {
+                    ToolbarItem(placement: .topBarLeading) {
+                        sortMenu
+                    }
+                    ToolbarItem(placement: .primaryAction) {
+                        Button(Strings.Collection.addBottle, systemImage: "plus") {
+                            showingAddForm = true
+                        }
                     }
                 }
             }

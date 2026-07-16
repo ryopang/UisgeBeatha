@@ -11,6 +11,7 @@ import SwiftUI
 struct UisgeBeathaApp: App {
     let modelContainer: ModelContainer
     let distilleryStore: DistilleryStore
+    let stockPhotoBackfill: StockPhotoBackfill
 
     init() {
         do {
@@ -32,6 +33,8 @@ struct UisgeBeathaApp: App {
                 .error("Failed to load distillery seed data: \(error)")
             distilleryStore = DistilleryStore(distilleries: [])
         }
+
+        stockPhotoBackfill = StockPhotoBackfill(search: Self.productImageSearchService())
     }
 
     var body: some Scene {
@@ -41,6 +44,7 @@ struct UisgeBeathaApp: App {
                 .environment(\.barcodeLookup, Self.lookupService())
                 .environment(\.wikipedia, Self.wikipediaService())
                 .environment(\.labelOCR, Self.labelOCRService())
+                .environment(\.stockPhotoBackfill, stockPhotoBackfill)
         }
         .modelContainer(modelContainer)
     }
@@ -70,5 +74,14 @@ struct UisgeBeathaApp: App {
         }
         #endif
         return VisionLabelOCRService()
+    }
+
+    private static func productImageSearchService() -> any ProductImageSearching {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-uiTestLookupStub") {
+            return StubProductImageSearchService()
+        }
+        #endif
+        return CascadeImageSearchService()
     }
 }

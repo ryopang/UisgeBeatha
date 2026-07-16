@@ -38,12 +38,28 @@ struct RegionMapView: View {
         // competing for attention.
         .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll, showsTraffic: false))
         .mapControls {}
+        .overlay(alignment: .top) {
+            summaryPanel
+                .padding(.top, 8)
+        }
         .sheet(item: $selectedRegion) { region in
             RegionBottlesSheet(
                 region: region,
                 bottles: bottles.filter { $0.region == region.id }
             )
         }
+    }
+
+    /// A quick "how many bottles do I own" glance — just the total, kept to
+    /// one small floating pill rather than a fuller stats view.
+    private var summaryPanel: some View {
+        Label(Strings.Map.summary(count: bottles.count), systemImage: "wineglass")
+            .font(.subheadline.weight(.semibold))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(.thinMaterial, in: Capsule())
+            .shadow(color: .black.opacity(0.15), radius: 2, y: 1)
+            .accessibilityElement(children: .combine)
     }
 
     private func badge(for region: WhiskyRegion, count: Int) -> some View {

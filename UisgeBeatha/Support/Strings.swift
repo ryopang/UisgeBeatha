@@ -112,6 +112,10 @@ nonisolated enum Strings {
         static func badgeLabel(region: String, count: Int) -> String {
             count == 1 ? "\(region), 1 bottle" : "\(region), \(count) bottles"
         }
+
+        static func summary(count: Int) -> String {
+            count == 1 ? "1 Bottle" : "\(count) Bottles"
+        }
     }
 
     enum Detail {
@@ -120,6 +124,8 @@ nonisolated enum Strings {
         static let delete = "Delete"
         static let takePhoto = "Take Photo"
         static let choosePhoto = "Choose Photo"
+        static let lookUpPhoto = "Look Up Photo"
+        static let lookUpPhotoFailure = "Couldn't look up a photo right now. Try again in a bit."
         static let distillery = "Distillery"
         static let region = "Region"
         static let abv = "ABV"

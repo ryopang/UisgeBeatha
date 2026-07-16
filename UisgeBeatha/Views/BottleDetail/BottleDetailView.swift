@@ -10,6 +10,7 @@ struct BottleDetailView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.imageStore) private var imageStore
+    @Environment(\.stockPhotoBackfill) private var stockPhotoBackfill
     @Environment(\.dismiss) private var dismiss
 
     @State private var showingEditForm = false
@@ -142,18 +143,54 @@ struct BottleDetailView: View {
             }
     }
 
+    private var isSearchingStockPhoto: Bool {
+        stockPhotoBackfill?.isSearching(bottle) ?? false
+    }
+
+    private var stockPhotoLookupFailed: Bool {
+        stockPhotoBackfill?.lookupFailed(bottle) ?? false
+    }
+
     private var photoButtons: some View {
-        HStack(spacing: 12) {
-            if UIImagePickerController.isSourceTypeAvailable(.camera) {
-                Button(Strings.Detail.takePhoto, systemImage: "camera") {
-                    showingCamera = true
+        VStack(spacing: 8) {
+            HStack(spacing: 12) {
+                if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                    Button(Strings.Detail.takePhoto, systemImage: "camera") {
+                        showingCamera = true
+                    }
+                    .buttonStyle(.bordered)
+                }
+                PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                    Label(Strings.Detail.choosePhoto, systemImage: "photo.on.rectangle")
                 }
                 .buttonStyle(.bordered)
+                Button {
+                    // A person pressing this again clearly wants a fresh
+                    // attempt, not the same cached hit or miss re-served.
+                    stockPhotoBackfill?.fetch(for: bottle, modelContext: modelContext, bypassCache: true)
+                } label: {
+                    if isSearchingStockPhoto {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "magnifyingglass")
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(isSearchingStockPhoto)
+                .accessibilityLabel(Strings.Detail.lookUpPhoto)
             }
-            PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                Label(Strings.Detail.choosePhoto, systemImage: "photo.on.rectangle")
+            if isSearchingStockPhoto {
+                // Also covers the automatic backfill kicked off right after
+                // a label-OCR / manual save, so it's never running silently
+                // with nothing on screen to explain it.
+                Text(Strings.Scan.lookingUp)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else if stockPhotoLookupFailed {
+                Text(Strings.Detail.lookUpPhotoFailure)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
-            .buttonStyle(.bordered)
         }
     }
 
