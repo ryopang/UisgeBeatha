@@ -103,10 +103,7 @@ struct ScanView: View {
             activeSheet = .labelEntry
         } label: {
             Text(Strings.Scan.noBarcodeLabelPrompt)
-                .font(.footnote.weight(.medium))
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(.regularMaterial, in: Capsule())
+                .pillLabel()
         }
         .buttonStyle(.plain)
     }
@@ -222,10 +219,7 @@ private struct DuplicateBottleSheet: View {
         .overlay(alignment: .top) {
             if showingToast {
                 Text(Strings.Scan.duplicateToast)
-                    .font(.subheadline.weight(.medium))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(.regularMaterial, in: Capsule())
+                    .pillLabel()
                     .padding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }

@@ -131,12 +131,16 @@ struct BottleDetailView: View {
         }
         .frame(maxWidth: .infinity)
         .frame(height: 280)
-        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.hero))
+        // The one deliberate shadow in the app: the bottle photo is the
+        // "product" here, so it's the one surface that gets to rest above
+        // the page instead of sitting flush with it.
+        .heroShadow()
         .accessibilityHidden(true)
     }
 
     private var heroPlaceholder: some View {
-        RoundedRectangle(cornerRadius: 24)
+        RoundedRectangle(cornerRadius: Theme.Radius.hero)
             .fill(.quaternary.opacity(0.5))
             .overlay {
                 MonogramThumbnail(name: bottle.name, regionID: bottle.region, size: 120)
@@ -217,8 +221,7 @@ struct BottleDetailView: View {
             )
             factCell(Strings.Detail.added, bottle.dateAdded.formatted(date: .abbreviated, time: .omitted))
         }
-        .padding()
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 16))
+        .cardBackground()
     }
 
     private func factCell(_ label: String, _ value: String) -> some View {

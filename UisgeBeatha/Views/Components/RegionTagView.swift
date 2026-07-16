@@ -7,7 +7,7 @@ struct RegionTagView: View {
     var body: some View {
         if let region = RegionCatalog.region(id: regionID) {
             Text(region.displayName)
-                .font(.caption.weight(.medium))
+                .font(.caption.weight(Theme.Weight.emphasis))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
                 .foregroundStyle(region.accentColor)
