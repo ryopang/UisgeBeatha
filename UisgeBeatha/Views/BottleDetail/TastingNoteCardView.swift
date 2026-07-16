@@ -44,8 +44,6 @@ struct TastingNoteCardView: View {
                 }
             }
         }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 16))
+        .cardBackground()
     }
 }

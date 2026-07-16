@@ -47,7 +47,7 @@ struct DistilleryCardView: View {
                                 Color.clear
                             }
                             .frame(width: 64, height: 64)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.inline))
                             .accessibilityHidden(true)
                         }
                         Text(summary.extract)
@@ -62,9 +62,7 @@ struct DistilleryCardView: View {
                     }
                 }
             }
-            .padding()
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 16))
+            .cardBackground()
             .task(id: distilleryName) {
                 summary = await wikipedia.summary(forTitles: titleCandidates)
             }
