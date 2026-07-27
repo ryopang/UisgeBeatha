@@ -136,7 +136,7 @@ struct CollectionView: View {
                         Strings.Collection.statusSwipeLabel,
                         systemImage: "arrow.triangle.2.circlepath"
                     ) {
-                        bottle.status = bottle.status.next
+                        bottle.status = BottleStatus.next(after: bottle.status)
                         persistChanges()
                     }
                     .tint(.indigo)

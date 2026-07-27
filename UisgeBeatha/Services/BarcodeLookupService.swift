@@ -239,6 +239,21 @@ struct UPCItemDBTier: BarcodeLookupTier {
 /// Titles alone are often too terse to mention either, so callers should
 /// pass every text field a source provides (title, description, ...) —
 /// the first source with a match wins.
+///
+/// Two correctness rules that weren't true of the first version of this
+/// parser, found by running it against realistic label OCR fixtures:
+///
+/// 1. **Scan every match in a line, not just the first.** A European
+///    label's "40,0% vol" has the decimal comma read as its own group by a
+///    naive first-match regex; the plausible value ("40") is sitting right
+///    there in the same string. Taking only the first candidate and giving
+///    up if it fails the range check throws that away.
+/// 2. **A label prints its age as a big standalone numeral with "YEARS
+///    OLD" as a separate line or block below it.** Vision returns those as
+///    separate text observations, so a regex that only ever looks at one
+///    line in isolation never sees "12" and "YEARS OLD" together. Age
+///    detection here is line-window aware (see `LabelParser`); this type
+///    stays a pure per-text-window matcher.
 nonisolated enum WhiskyLabelParser {
     static func abv(from name: String) -> Double? {
         abv(in: [name])
@@ -250,51 +265,128 @@ nonisolated enum WhiskyLabelParser {
 
     static func abv(in texts: [String]) -> Double? {
         for text in texts {
-            if let value = percentMatch(in: text) { return value }
+            for value in percentMatches(in: text) where (20...80).contains(value) {
+                return value
+            }
         }
         for text in texts {
-            if let value = proofMatch(in: text) { return value }
+            for value in proofMatches(in: text) where (40...160).contains(value) {
+                return value / 2
+            }
         }
         return nil
     }
 
     static func age(in texts: [String]) -> Int? {
         for text in texts {
-            if let value = ageMatch(in: text) { return value }
+            for value in ageMatches(in: text) where (3...50).contains(value) {
+                return value
+            }
+        }
+        for text in texts {
+            if let value = spelledOutAgeMatch(in: text), (3...50).contains(value) {
+                return value
+            }
+        }
+        // Last resort, and only after both strict passes have come up
+        // empty: real labels set the age in ornate or embossed type that
+        // OCR mangles predictably — "AGED 15 YEARS" comes back as
+        // "AGKD 15 TRARS", "12 YEARS" as "12 YRANS" or "12 TEARS". The
+        // number itself survives; only the word around it is corrupted.
+        for text in texts {
+            if let value = fuzzyAgeMatch(in: text) { return value }
         }
         return nil
     }
 
-    private static func percentMatch(in text: String) -> Double? {
-        guard let regex = try? NSRegularExpression(pattern: #"(\d{1,2}(?:\.\d)?)\s*%"#) else {
-            return nil
-        }
-        guard let value = firstMatch(regex, in: text), (20...80).contains(value) else { return nil }
-        return value
+    /// "43%", "40,0% vol" (European comma decimal), "ALC 43 % VOL",
+    /// "54.2% ALC./VOL" — anything with a plausible ABV number ahead of a
+    /// literal "%". Every match in the text is returned so a caller can
+    /// skip a decoy (a batch number, a cask number) and use the next.
+    private static func percentMatches(in text: String) -> [Double] {
+        allMatches(pattern: #"(\d{1,2}(?:[.,]\d)?)\s*%"#, in: text)
     }
 
     /// US retail listings often state proof (ABV × 2) instead of a percentage.
-    private static func proofMatch(in text: String) -> Double? {
-        guard let regex = try? NSRegularExpression(
-            pattern: #"(\d{2,3}(?:\.\d)?)\s*proof"#, options: [.caseInsensitive]
-        ) else { return nil }
-        guard let value = firstMatch(regex, in: text), (40...160).contains(value) else { return nil }
-        return value / 2
+    private static func proofMatches(in text: String) -> [Double] {
+        allMatches(pattern: #"(\d{2,3}(?:[.,]\d)?)\s*proof"#, options: [.caseInsensitive], in: text)
     }
 
-    private static func ageMatch(in text: String) -> Int? {
-        guard let regex = try? NSRegularExpression(
-            pattern: #"(\d{1,2})\s*[- ]?(?:years?|yrs?|yo)\b"#, options: [.caseInsensitive]
-        ) else { return nil }
-        guard let value = firstMatch(regex, in: text), (3...50).contains(value) else { return nil }
-        return Int(value)
+    /// "16 Years Old", "AGED 12 YEARS", "18 Y.O.", "10YO", "12-Year",
+    /// "aged 21". `(?![a-zA-Z])` instead of a trailing `\b` because `\b`
+    /// never matches right after a period at the end of a string — which
+    /// is exactly where "Y.O." ends, and silently dropped every match.
+    private static func ageMatches(in text: String) -> [Int] {
+        let numericWord = allMatches(
+            pattern: #"(\d{1,2})\s*[- ]?(?:years?|yrs?|y\.?o\.?)(?![a-zA-Z])"#,
+            options: [.caseInsensitive], in: text
+        )
+        let agedForm = allMatches(
+            pattern: #"\baged\s+(\d{1,2})\b"#, options: [.caseInsensitive], in: text
+        )
+        return (numericWord + agedForm).map { Int($0) }
     }
 
-    private static func firstMatch(_ regex: NSRegularExpression, in text: String) -> Double? {
+    /// "Twelve Year Old", "Eighteen Years" — rarer than a numeral, but real
+    /// on some traditional and travel-retail labels, and free once the
+    /// numeric form has already come up empty.
+    private static let spelledOutAges: [(word: String, value: Int)] = [
+        ("ten", 10), ("twelve", 12), ("thirteen", 13), ("fourteen", 14),
+        ("fifteen", 15), ("sixteen", 16), ("seventeen", 17), ("eighteen", 18),
+        ("twenty", 20), ("twentyone", 21), ("twentyfive", 25), ("thirty", 30),
+    ]
+    private static func spelledOutAgeMatch(in text: String) -> Int? {
+        let tokens = DistilleryStore.normalize(text).split(separator: " ").map(String.init)
+        guard let yearIndex = tokens.firstIndex(where: { $0.hasPrefix("year") }), yearIndex > 0 else {
+            return nil
+        }
+        let candidate = tokens[yearIndex - 1]
+        return spelledOutAges.first { $0.word == candidate }?.value
+    }
+
+    /// Age words as they're *supposed* to read. Anything within a small
+    /// edit distance of one of these counts, which is what rescues the
+    /// OCR-mangled variants real bottle photos actually produce.
+    private static let ageWords: Set<String> = ["years", "year", "yrs", "yr", "aged", "ans", "jahre"]
+
+    private static func isAgeWord(_ token: String) -> Bool {
+        if ageWords.contains(token) { return true }
+        // Only worth fuzzy-matching tokens of roughly the right shape;
+        // anything shorter collides with real words far too easily.
+        guard token.count >= 4, token.count <= 6 else { return false }
+        return ageWords.contains { reference in
+            reference.count >= 4 && DistilleryStore.levenshtein(token, reference) <= 2
+        }
+    }
+
+    /// A plausible age numeral sitting within two tokens of something that
+    /// looks like an age word — order-independent, so "AGED 10 YEARS",
+    /// "10 AGED YEARS" and "12 YRANS" all resolve. Runs only after the
+    /// strict passes fail, so a clean label is never decided by this.
+    private static func fuzzyAgeMatch(in text: String) -> Int? {
+        let tokens = DistilleryStore.normalize(text).split(separator: " ").map(String.init)
+        for (index, token) in tokens.enumerated() {
+            // A bare 4-digit year ("SINCE 1887") is never an age, and
+            // Int() already rejects it by range below.
+            guard let value = Int(token), (3...50).contains(value) else { continue }
+            let lower = max(0, index - 2)
+            let upper = min(tokens.count - 1, index + 2)
+            for neighbour in lower...upper where neighbour != index {
+                if isAgeWord(tokens[neighbour]) { return value }
+            }
+        }
+        return nil
+    }
+
+    private static func allMatches(
+        pattern: String, options: NSRegularExpression.Options = [], in text: String
+    ) -> [Double] {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: options) else { return [] }
         let range = NSRange(text.startIndex..., in: text)
-        guard let match = regex.firstMatch(in: text, range: range),
-              let numberRange = Range(match.range(at: 1), in: text) else { return nil }
-        return Double(text[numberRange])
+        return regex.matches(in: text, range: range).compactMap { match in
+            guard let numberRange = Range(match.range(at: 1), in: text) else { return nil }
+            return Double(text[numberRange].replacingOccurrences(of: ",", with: "."))
+        }
     }
 }
 

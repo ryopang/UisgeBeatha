@@ -93,20 +93,32 @@ final class CollectionFlowUITests: XCTestCase {
             cancelSearch.tap()
         }
 
-        // Leading swipe cycles status sealed → open.
+        // Leading swipe sets status. A new bottle starts with *no* status
+        // (BottleStatus.next(after: nil)), so the first cycle lands on
+        // Sealed rather than advancing from a presumed Sealed to Open.
         let lagavulinCell = app.cells.containing(
             NSPredicate(format: "label CONTAINS 'Lagavulin 16'")
         ).firstMatch
         XCTAssertTrue(lagavulinCell.waitForExistence(timeout: 5), "Full list should return after leaving search")
-        XCTAssertTrue(lagavululinLabelContains(lagavulinCell, "Sealed"), "New bottle should start sealed")
         lagavulinCell.swipeRight()
         let statusAction = app.buttons["Status"]
         XCTAssertTrue(statusAction.waitForExistence(timeout: 5))
         statusAction.tap()
+
+        // The row deliberately doesn't render status text (BottleRowView
+        // keeps rows uncluttered at accessibility Dynamic Type sizes), so
+        // confirm the change landed on the detail screen instead.
+        lagavulinRow.tap()
+        let statusButton = app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH 'Status'")
+        ).firstMatch
+        XCTAssertTrue(statusButton.waitForExistence(timeout: 5), "Detail should show the status control")
         XCTAssertTrue(
-            lagavulinCell.staticTexts["Open"].waitForExistence(timeout: 5),
-            "Leading swipe should cycle sealed to open"
+            statusButton.label.contains("Sealed"),
+            "First status cycle from unset should land on Sealed; got \(statusButton.label)"
         )
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(lagavulinCell.waitForExistence(timeout: 5), "Should return to the list")
 
         // Trailing swipe deletes after confirmation.
         lagavulinCell.swipeLeft()
@@ -152,8 +164,4 @@ final class CollectionFlowUITests: XCTestCase {
         return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed
     }
 
-    /// Status text may surface as the cell's combined label or a child static text.
-    private func lagavululinLabelContains(_ cell: XCUIElement, _ text: String) -> Bool {
-        cell.label.contains(text) || cell.staticTexts[text].exists
-    }
 }

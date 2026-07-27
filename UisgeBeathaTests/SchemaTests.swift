@@ -51,9 +51,20 @@ struct SchemaTests {
         let bottle = Bottle()
         #expect(bottle.country == "Scotland")
         #expect(bottle.currencyCode == "USD")
-        #expect(bottle.status == .sealed)
+        // A new bottle has no status until someone sets one — defaulting
+        // every scan to Sealed asserted something the app can't know.
+        #expect(bottle.status == nil)
         #expect(bottle.rating == nil)
         #expect(bottle.ageStatement == nil)
         #expect(bottle.notes?.isEmpty == true)
+    }
+
+    /// Cycling starts at sealed from unset and never returns to unset —
+    /// a stray extra tap shouldn't silently blank a status.
+    @Test func statusCyclingFromUnsetStartsAtSealedAndNeverReturnsToUnset() {
+        #expect(BottleStatus.next(after: nil) == .sealed)
+        #expect(BottleStatus.next(after: .sealed) == .open)
+        #expect(BottleStatus.next(after: .open) == .finished)
+        #expect(BottleStatus.next(after: .finished) == .sealed)
     }
 }

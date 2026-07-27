@@ -30,7 +30,28 @@ nonisolated enum Strings {
         static let detailsCategories = "Categories"
         static let duplicateToast = "Already in your collection."
         static let missNotice = "Not found in the database. Add it manually and it's saved for good."
-        static let noBarcodeLabelPrompt = "No barcode? Scan the label instead"
+        static let useThisLabel = "Use This Label"
+        static let enterManually = "Enter Manually"
+        static let modePicker = "Scan Mode"
+        static let modeBarcode = "Barcode"
+        static let modeLabel = "Label"
+        static let barcodeInstruction = "Point at the barcode on the back of the bottle"
+        static let labelInstruction = "Point at the front label"
+        static let labelReadingNothingYet = "Hold steady on the label"
+        static let scanBarcode = "Scan Barcode"
+        static let scanLabel = "Scan Label"
+    }
+
+    enum ScanResult {
+        static let title = "Label Scan"
+        static let retake = "Retake"
+        static let notFound = "Not found"
+        static let guessedLabel = "Uncertain — please check"
+        static let suggestedDistilleries = "Did you mean"
+        static let allDistilleries = "All Distilleries"
+        static let searchResults = "Results"
+        static let searchDistilleries = "Search distilleries"
+        static let confidenceCaption = "Fields marked with a question mark weren't certain — check them before saving."
     }
 
     enum Policy {
@@ -82,6 +103,7 @@ nonisolated enum Strings {
         static let distilleryPlaceholder = "Start typing to search"
         static let region = "Region"
         static let regionPlaceholder = "Select a region"
+        static let statusPlaceholder = "Not set"
         static let abv = "ABV %"
         static let noAgeStatement = "No age statement (NAS)"
         static let age = "Age (years)"
@@ -96,6 +118,7 @@ nonisolated enum Strings {
         static let cancel = "Cancel"
         static let scanLabel = "Scan the Label"
         static let labelScanSuccess = "Read from the label — please check the details."
+        static let labelScanUncertain = "Read from the label, but the distillery match isn't certain — please check it."
         static let labelScanFailure = "Couldn't read the label. Try a closer, well-lit photo, or enter the details manually."
     }
 
@@ -125,7 +148,9 @@ nonisolated enum Strings {
         static let takePhoto = "Take Photo"
         static let choosePhoto = "Choose Photo"
         static let lookUpPhoto = "Look Up Photo"
+        static let removePhoto = "Remove Photo"
         static let lookUpPhotoFailure = "Couldn't look up a photo right now. Try again in a bit."
+        static let distilleryPhotoCaption = "Distillery photo"
         static let distillery = "Distillery"
         static let region = "Region"
         static let abv = "ABV"
@@ -133,6 +158,7 @@ nonisolated enum Strings {
         static let nas = "NAS"
         static let caskType = "Cask Type"
         static let status = "Status"
+        static let statusNotSet = "Not set"
         static let statusHint = "Cycles between sealed, open, and finished"
         static let price = "Price"
         static let purchased = "Purchased"

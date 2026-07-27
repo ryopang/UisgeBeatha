@@ -24,22 +24,33 @@ struct BottleFormView: View {
     var barcodeIsLocked = false
     /// One-line banner, e.g. the lookup-miss notice.
     var notice: String?
-    /// True for the barcode-miss path and the "scan the label instead"
-    /// entry point: offers a "Scan the Label" button that reads
-    /// brand/name/age/ABV off a label photo via OCR.
+    /// True for the barcode-miss path and the manual-entry entry point:
+    /// offers "Scan Barcode" and "Scan Label" buttons that reopen the
+    /// *live scanner* in that mode. Previously this offered a single
+    /// button that opened a still-photo camera, which both looked like an
+    /// unrelated "take a picture" mode and left no way back to barcode
+    /// scanning without abandoning the form.
     var offersLabelScan = false
-    /// True when the person chose "Scan the Label" before any barcode
-    /// attempt (from the live scanner overlay) rather than after a miss —
-    /// skips the extra tap and opens the camera immediately.
-    var autoLaunchLabelCamera = false
+    /// A photo already captured for this bottle (from an accepted live
+    /// label read), saved on first save so the scan doesn't discard the
+    /// one good photo of this exact bottle.
+    var initialPhotoData: Data?
     /// Called after a successful save, so scan sheets can dismiss the chain.
     var onSaved: (() -> Void)?
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.distilleryStore) private var distilleryStore
+    @Environment(\.expressionStore) private var expressionStore
     @Environment(\.labelOCR) private var labelOCR
+    @Environment(\.imageStore) private var imageStore
     @Environment(\.stockPhotoBackfill) private var stockPhotoBackfill
     @Environment(\.dismiss) private var dismiss
+
+    /// Read-only: seeds cask type autocomplete from what's already in the
+    /// collection (PRD out-of-scope note aside, this costs nothing beyond a
+    /// query and makes cask type actually consistent enough to filter on
+    /// later, rather than N free-text spellings of the same thing).
+    @Query private var existingBottles: [Bottle]
 
     @State private var name: String
     @State private var distilleryName: String
@@ -51,13 +62,23 @@ struct BottleFormView: View {
     @State private var price: Decimal?
     @State private var hasPurchaseDate: Bool
     @State private var purchaseDate: Date
-    @State private var status: BottleStatus
+    /// nil means "not filled in" — a new bottle starts with no status
+    /// rather than being silently declared Sealed.
+    @State private var status: BottleStatus?
     @State private var barcode: String
-    @State private var showingLabelCamera = false
+    /// Which mode the in-form scanner sheet is showing, nil when closed.
+    @State private var activeScanMode: ScanMode?
     @State private var isScanningLabel = false
     @State private var labelScanBanner: String?
+    /// The photo for this bottle, kept regardless of whether OCR could read
+    /// anything off it — it's the best available photo of this exact
+    /// bottle. Previously discarded the moment OCR finished, after which
+    /// the app would go to the *internet* looking for a photo of the
+    /// bottle already in hand.
+    @State private var labelPhotoData: Data?
 
     @FocusState private var distilleryFieldFocused: Bool
+    @FocusState private var caskTypeFieldFocused: Bool
 
     private static let logger = Logger(subsystem: "com.ryo.UisgeBeatha", category: "BottleForm")
 
@@ -67,7 +88,7 @@ struct BottleFormView: View {
         barcodeIsLocked: Bool = false,
         notice: String? = nil,
         offersLabelScan: Bool = false,
-        autoLaunchLabelCamera: Bool = false,
+        initialPhotoData: Data? = nil,
         onSaved: (() -> Void)? = nil
     ) {
         self.bottle = bottle
@@ -75,7 +96,7 @@ struct BottleFormView: View {
         self.barcodeIsLocked = barcodeIsLocked
         self.notice = notice
         self.offersLabelScan = offersLabelScan
-        self.autoLaunchLabelCamera = autoLaunchLabelCamera
+        self.initialPhotoData = initialPhotoData
         self.onSaved = onSaved
         _name = State(initialValue: bottle?.name ?? prefill?.name ?? "")
         _distilleryName = State(initialValue: bottle?.distilleryName ?? prefill?.distilleryName ?? "")
@@ -88,8 +109,9 @@ struct BottleFormView: View {
         _price = State(initialValue: bottle?.purchasePrice)
         _hasPurchaseDate = State(initialValue: bottle?.purchaseDate != nil)
         _purchaseDate = State(initialValue: bottle?.purchaseDate ?? .now)
-        _status = State(initialValue: bottle?.status ?? .sealed)
+        _status = State(initialValue: bottle?.status)
         _barcode = State(initialValue: bottle?.barcode ?? prefill?.barcode ?? "")
+        _labelPhotoData = State(initialValue: initialPhotoData)
     }
 
     private var canSave: Bool {
@@ -120,6 +142,25 @@ struct BottleFormView: View {
         )
     }
 
+    /// Distinct cask types already in the collection, filtered to the
+    /// current input — same shape as `distillerySuggestions`, just sourced
+    /// from the user's own data instead of the seed catalog.
+    private var caskTypeSuggestions: [String] {
+        guard caskTypeFieldFocused else { return [] }
+        let allTypes = Set(existingBottles.compactMap {
+            $0.caskType?.trimmingCharacters(in: .whitespaces)
+        }.filter { !$0.isEmpty })
+        let query = caskType.trimmingCharacters(in: .whitespaces)
+        let matches = query.isEmpty
+            ? allTypes
+            : allTypes.filter { $0.localizedCaseInsensitiveContains(query) }
+        // Hide the list once the field exactly names the only match.
+        if matches.count == 1, matches.first?.localizedCaseInsensitiveCompare(query) == .orderedSame {
+            return []
+        }
+        return Array(matches.sorted().prefix(6))
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -130,14 +171,23 @@ struct BottleFormView: View {
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                         }
-                        if offersLabelScan, UIImagePickerController.isSourceTypeAvailable(.camera) {
+                        // Both modes, always — the whole point is that
+                        // there's an obvious way back to barcode scanning
+                        // after a miss, not just a label camera.
+                        if offersLabelScan, LiveScannerView.isSupported {
                             Button {
-                                showingLabelCamera = true
+                                activeScanMode = .barcode
+                            } label: {
+                                Label(Strings.Scan.scanBarcode, systemImage: "barcode.viewfinder")
+                            }
+                            .disabled(isScanningLabel)
+                            Button {
+                                activeScanMode = .label
                             } label: {
                                 if isScanningLabel {
                                     Label(Strings.Scan.lookingUp, systemImage: "text.viewfinder")
                                 } else {
-                                    Label(Strings.Form.scanLabel, systemImage: "text.viewfinder")
+                                    Label(Strings.Scan.scanLabel, systemImage: "text.viewfinder")
                                 }
                             }
                             .disabled(isScanningLabel)
@@ -196,9 +246,26 @@ struct BottleFormView: View {
                         text: $caskType,
                         prompt: Text(Strings.Form.caskTypePlaceholder)
                     )
+                    .focused($caskTypeFieldFocused)
+                    ForEach(caskTypeSuggestions, id: \.self) { suggestion in
+                        Button {
+                            caskType = suggestion
+                            caskTypeFieldFocused = false
+                        } label: {
+                            Text(suggestion)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                    }
                     Picker(Strings.Form.status, selection: $status) {
+                        // A bottle starts with no status rather than being
+                        // silently declared Sealed; this is also how an
+                        // already-set status gets cleared again.
+                        Text(Strings.Form.statusPlaceholder).tag(BottleStatus?.none)
                         ForEach(BottleStatus.allCases, id: \.self) { status in
-                            Text(Strings.Status.label(for: status)).tag(status)
+                            Text(Strings.Status.label(for: status)).tag(BottleStatus?.some(status))
                         }
                     }
                     if barcodeIsLocked {
@@ -242,20 +309,23 @@ struct BottleFormView: View {
                 }
             }
         }
-        .fullScreenCover(isPresented: $showingLabelCamera) {
-            CameraPicker { image in
-                Task {
-                    isScanningLabel = true
-                    await applyLabelScan(image)
-                    isScanningLabel = false
+        .fullScreenCover(item: $activeScanMode) { mode in
+            InFormScannerSheet(
+                mode: mode,
+                onBarcode: { scanned in
+                    barcode = scanned
+                    activeScanMode = nil
+                },
+                onLabel: { lines, photoData in
+                    activeScanMode = nil
+                    if let photoData { labelPhotoData = photoData }
+                    Task {
+                        isScanningLabel = true
+                        applyLabelScan(lines: lines)
+                        isScanningLabel = false
+                    }
                 }
-            }
-            .ignoresSafeArea()
-        }
-        .task {
-            if autoLaunchLabelCamera {
-                showingLabelCamera = true
-            }
+            )
         }
     }
 
@@ -274,29 +344,32 @@ struct BottleFormView: View {
         distilleryFieldFocused = false
     }
 
-    /// Applies whatever OCR could read off the label. Only fills fields
-    /// that got a new value — never blanks something the person already
-    /// typed just because this particular photo didn't confirm it.
-    private func applyLabelScan(_ image: UIImage) async {
-        do {
-            let lines = try await labelOCR.recognizeText(in: image)
-            guard let result = LabelParser.parse(lines: lines, distilleryStore: distilleryStore) else {
-                labelScanBanner = Strings.Form.labelScanFailure
-                return
-            }
-            if !result.name.isEmpty { name = result.name }
-            if !result.distilleryName.isEmpty { distilleryName = result.distilleryName }
-            if !result.region.isEmpty { region = result.region }
-            if let abv = result.abv { self.abv = abv }
-            if let age = result.age {
-                self.age = age
-                isNAS = false
-            }
-            labelScanBanner = Strings.Form.labelScanSuccess
-        } catch {
-            Self.logger.error("Label OCR failed: \(error)")
+    /// Applies whatever the live label scan read. Only fills fields that
+    /// got a new value — never blanks something the person already typed
+    /// just because this particular read didn't confirm it.
+    ///
+    /// Takes already-recognized lines rather than an image: the in-form
+    /// scanner is the same live VisionKit session the Scan tab uses, so
+    /// recognition has already happened by the time this is called.
+    private func applyLabelScan(lines: [String]) {
+        guard let result = LabelParser.parse(
+            lines: lines, distilleryStore: distilleryStore, expressionStore: expressionStore
+        ) else {
             labelScanBanner = Strings.Form.labelScanFailure
+            return
         }
+        if !result.name.isEmpty { name = result.name }
+        if !result.distilleryName.isEmpty { distilleryName = result.distilleryName }
+        if !result.region.isEmpty { region = result.region }
+        if let abv = result.abv { self.abv = abv }
+        if result.isNAS { isNAS = true }
+        if let age = result.age {
+            self.age = age
+            isNAS = false
+        }
+        labelScanBanner = result.distilleryProvenance == .guessed
+            ? Strings.Form.labelScanUncertain
+            : Strings.Form.labelScanSuccess
     }
 
     private func save() {
@@ -323,18 +396,27 @@ struct BottleFormView: View {
             // Keep the lookup's stock photo so rows and the detail hero can
             // show it until the owner takes their own (PRD F4).
             target.stockPhotoURL = prefill?.stockPhotoURL
+            // The photo captured for label scanning is the best available
+            // photo of this exact bottle — save it as the user photo rather
+            // than discarding it and going to the internet to search for a
+            // stand-in (previously the only outcome of a label scan).
+            if let labelPhotoData, let filename = try? imageStore.save(imageData: labelPhotoData) {
+                target.userPhotoFilename = filename
+            }
             modelContext.insert(target)
         }
         do {
             try modelContext.save()
             dismiss()
             onSaved?()
-            // Label-OCR and fully manual entries never got a stock photo
-            // from a barcode hit — best-effort backfill by name/distillery.
-            // The detail view surfaces its progress (StockPhotoBackfill
-            // tracks it by bottle ID, independent of this view's lifetime).
-            if isNewBottle, target.stockPhotoURL == nil {
-                stockPhotoBackfill?.fetch(for: target, modelContext: modelContext)
+            // Only worth searching when the bottle still has no photo at
+            // all — a barcode-hit stock photo or a label-scan user photo
+            // both mean there's nothing to backfill.
+            if isNewBottle, target.stockPhotoURL == nil, target.userPhotoFilename == nil {
+                stockPhotoBackfill?.fetch(
+                    for: target, modelContext: modelContext,
+                    distilleryWikipediaTitle: distilleryStore.exactMatch(target.distilleryName)?.wikipediaTitle
+                )
             }
         } catch {
             Self.logger.error("Failed to save bottle: \(error)")

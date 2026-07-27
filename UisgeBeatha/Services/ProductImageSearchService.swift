@@ -15,14 +15,34 @@ protocol ProductImageSearching: Sendable {
     /// again. The result is still written to the cache either way, so a
     /// later automatic backfill for a different bottle with the same
     /// query benefits from it.
-    func findImage(name: String, distilleryName: String, age: Int?, bypassCache: Bool) async -> ImageLookupResult
+    func findImage(request: ImageLookupRequest, bypassCache: Bool) async -> ImageLookupResult
+}
+
+/// Everything a lookup can use to find a photo. `barcode` and
+/// `distilleryWikipediaTitle` are optional extras beyond name/distillery/age
+/// that let the cascade try more reliable, product-specific sources before
+/// falling back to free-text search.
+nonisolated struct ImageLookupRequest: Sendable, Equatable {
+    var name: String
+    var distilleryName: String
+    var age: Int?
+    /// When present, tried first via Open Food Facts' *product* endpoint —
+    /// the same reliable, exact-match endpoint the barcode-lookup cascade
+    /// itself uses, not its flaky free-text search.
+    var barcode: String?
+    /// The matched distillery's Wikipedia article title (from seed data),
+    /// tried second — always relevant (it's a real photo of the actual
+    /// distillery), never a guess, but not a photo of this specific
+    /// bottle. `ImageLookupResult.found` reports when a hit came from here
+    /// so the UI can label it honestly.
+    var distilleryWikipediaTitle: String?
 }
 
 /// Distinguishes a clean "no match" from every tier being unreachable —
 /// worth telling the person apart from "nothing found" (same "never
 /// silently look broken" spirit as the label-OCR failure banner).
 nonisolated enum ImageLookupResult: Sendable, Equatable {
-    case found(String)
+    case found(url: String, isDistilleryPhoto: Bool)
     case notFound
     case unavailable
 }
@@ -31,26 +51,80 @@ nonisolated enum ImageLookupResult: Sendable, Equatable {
 /// (today's outage isn't tomorrow's), so it's never persisted, same rule as
 /// the barcode cascade never caching a transport error.
 nonisolated enum ImageSearchOutcome: Codable, Sendable, Equatable {
-    case found(String)
+    case found(url: String, isDistilleryPhoto: Bool)
     case notFound
 }
 
 // MARK: - Tiers
 
-/// One source in the image-search cascade. Return nil for a definitive
-/// "no photo here"; throw for transport problems (down, rate-limited) so
-/// the cascade can fall through to the next tier without caching a false
-/// miss — same contract as BarcodeLookupTier.
+/// One free-text source in the image-search cascade. Return nil for a
+/// definitive "no photo here"; throw for transport problems (down,
+/// rate-limited) so the cascade can fall through to the next tier without
+/// caching a false miss — same contract as BarcodeLookupTier.
 protocol ImageSearchTier: Sendable {
     var tierName: String { get }
     func findImage(query: String) async throws -> String?
+}
+
+/// The barcode-keyed source in the cascade, kept as its own small protocol
+/// (rather than folded into `ImageSearchTier`) since it takes a barcode,
+/// not a text query — same contract otherwise (nil for a definitive miss,
+/// throw for a transport problem), and injectable the same way for tests.
+protocol BarcodeImageSearching: Sendable {
+    var tierName: String { get }
+    func findImage(barcode: String) async throws -> String?
+}
+
+/// Open Food Facts' *product* endpoint, fetched by barcode — the exact
+/// reliable endpoint the barcode-lookup cascade itself uses
+/// (OpenFoodFactsTier), not the free-text search endpoint below (whose own
+/// doc comment notes it "returns 503s for stretches at a time"). A barcode
+/// identifies the exact product, so this is tried before anything
+/// text-based when the bottle has one.
+struct OpenFoodFactsBarcodeImageTier: BarcodeImageSearching {
+    let tierName = "Open Food Facts (barcode)"
+    var session: URLSession = .shared
+
+    private static let logger = Logger(subsystem: "com.ryo.UisgeBeatha", category: "ImageSearch")
+
+    func findImage(barcode: String) async throws -> String? {
+        guard let url = URL(
+            string: "https://world.openfoodfacts.org/api/v2/product/\(barcode).json?fields=image_url"
+        ) else { return nil }
+        var request = URLRequest(url: url)
+        request.setValue("UisgeBeatha/1.0 (personal iOS app)", forHTTPHeaderField: "User-Agent")
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+        if http.statusCode == 404 { return nil }
+        guard http.statusCode == 200 else { throw URLError(.badServerResponse) }
+        return Self.parse(data)
+    }
+
+    /// Exposed for tests.
+    static func parse(_ data: Data) -> String? {
+        struct Response: Decodable {
+            struct Product: Decodable {
+                let imageURL: String?
+                enum CodingKeys: String, CodingKey { case imageURL = "image_url" }
+            }
+            let status: Int?
+            let product: Product?
+        }
+        guard let response = try? JSONDecoder().decode(Response.self, from: data),
+              response.status == 1,
+              let imageURL = response.product?.imageURL, !imageURL.isEmpty else {
+            return nil
+        }
+        return imageURL
+    }
 }
 
 /// Wikimedia Commons' media search (free, no key). Community-uploaded
 /// product photography gives decent whisky-bottle coverage, and it runs on
 /// Wikimedia's infrastructure — in practice far more reliable than Open
 /// Food Facts' free-text search endpoint, which returns 503s for stretches
-/// at a time. Tried first for that reason.
+/// at a time.
 struct WikimediaCommonsImageTier: ImageSearchTier {
     let tierName = "Wikimedia Commons"
     var session: URLSession = .shared
@@ -69,10 +143,10 @@ struct WikimediaCommonsImageTier: ImageSearchTier {
         var components = URLComponents(string: "https://commons.wikimedia.org/w/api.php")
         components?.queryItems = [
             URLQueryItem(name: "action", value: "query"),
-            URLQueryItem(name: "generator", value: "search"),
             // "whisky bottle" biases matches toward product photos rather
             // than distillery buildings or landscapes, which also turn up
             // otherwise.
+            URLQueryItem(name: "generator", value: "search"),
             URLQueryItem(name: "gsrsearch", value: "\(query) whisky bottle"),
             URLQueryItem(name: "gsrnamespace", value: "6"),
             // Wider than 1 because the File namespace also holds PDFs,
@@ -143,10 +217,11 @@ struct WikimediaCommonsImageTier: ImageSearchTier {
 
 /// Open Food Facts' free-text product search (free, no key) — the same
 /// database as the barcode cascade's tier 1, searched by name instead of
-/// barcode. Kept as a fallback: it's product-specific (a real bottle shot,
-/// not a distillery photo) when it works, but its search endpoint has
-/// turned out to return 503 for extended periods, unlike its barcode
-/// endpoint.
+/// barcode. Last resort: it's product-specific (a real bottle shot, not a
+/// distillery photo) when it works, but its search endpoint has turned out
+/// to return 503 for extended periods, unlike its barcode/product endpoint
+/// (OpenFoodFactsBarcodeImageTier, above) — which is why every other tier
+/// in this cascade runs ahead of it.
 struct OpenFoodFactsImageTier: ImageSearchTier {
     let tierName = "Open Food Facts"
     var session: URLSession = .shared
@@ -213,36 +288,83 @@ struct OpenFoodFactsImageTier: ImageSearchTier {
 
 // MARK: - Cascade
 
-/// Runs the tiers in order, stops at the first usable photo, and caches
+/// Runs the sources in order, stops at the first usable photo, and caches
 /// every definitive outcome (hit or miss) on disk for 90 days — mirrors
 /// CascadeBarcodeLookupService.
+///
+/// Order, most-likely-correct first (docs/label-scan-plan.md §L6):
+/// 1. Open Food Facts *product* image, by barcode — an exact match, not a
+///    guess, when the bottle has a barcode.
+/// 2. The matched distillery's Wikipedia lead image — always relevant
+///    (it's genuinely that distillery), reported back as
+///    `isDistilleryPhoto` so the UI never passes it off as a bottle photo.
+/// 3. Wikimedia Commons free-text search.
+/// 4. Open Food Facts free-text search — kept as a last resort despite its
+///    flaky uptime, since by this point every more-reliable source has
+///    already been tried and come up empty.
 struct CascadeImageSearchService: ProductImageSearching {
+    let barcodeImageTier: any BarcodeImageSearching
+    let wikipedia: any WikipediaServicing
     let tiers: [any ImageSearchTier]
     let cache: DiskCache<ImageSearchOutcome>
 
     private static let logger = Logger(subsystem: "com.ryo.UisgeBeatha", category: "ImageSearch")
 
     init(
+        barcodeImageTier: any BarcodeImageSearching = OpenFoodFactsBarcodeImageTier(),
+        wikipedia: any WikipediaServicing = WikipediaService(),
         tiers: [any ImageSearchTier] = [WikimediaCommonsImageTier(), OpenFoodFactsImageTier()],
-        // "V2": the mime-type filtering fix (a non-image file could win a
-        // search before it) means anything cached under the old name may
-        // be wrong, and a plain miss cached during an OFF outage shouldn't
-        // stick around either — bumping the folder name gives everyone a
-        // clean slate instead of waiting out the old 90-day expiry.
-        cache: DiskCache<ImageSearchOutcome> = DiskCache(folderName: "ImageSearchCacheV2", maxAge: 90 * 24 * 3600)
+        // "V3": the cascade now tries barcode and distillery-Wikipedia
+        // sources ahead of the old tier order, and results are tagged
+        // isDistilleryPhoto — anything cached under an older name may be
+        // stale or shaped differently. Bumping the folder name gives
+        // everyone a clean slate instead of waiting out the old expiry.
+        cache: DiskCache<ImageSearchOutcome> = DiskCache(folderName: "ImageSearchCacheV3", maxAge: 90 * 24 * 3600)
     ) {
+        self.barcodeImageTier = barcodeImageTier
+        self.wikipedia = wikipedia
         self.tiers = tiers
         self.cache = cache
     }
 
-    func findImage(name: String, distilleryName: String, age: Int?, bypassCache: Bool) async -> ImageLookupResult {
-        let queries = Self.buildQueryVariants(name: name, distilleryName: distilleryName, age: age)
+    func findImage(request: ImageLookupRequest, bypassCache: Bool) async -> ImageLookupResult {
+        let queries = Self.buildQueryVariants(
+            name: request.name, distilleryName: request.distilleryName, age: request.age
+        )
         guard let cacheKey = queries.first else { return .notFound }
 
         if !bypassCache, let cached = await cache.value(forKey: cacheKey) {
             switch cached {
-            case .found(let url): return .found(url)
+            case .found(let url, let isDistilleryPhoto): return .found(url: url, isDistilleryPhoto: isDistilleryPhoto)
             case .notFound: return .notFound
+            }
+        }
+
+        var sawTransportError = false
+
+        if let barcode = request.barcode {
+            do {
+                if let url = try await barcodeImageTier.findImage(barcode: barcode) {
+                    Self.logger.info("Image search hit via \(barcodeImageTier.tierName) for barcode \(barcode)")
+                    await cache.store(.found(url: url, isDistilleryPhoto: false), forKey: cacheKey)
+                    return .found(url: url, isDistilleryPhoto: false)
+                }
+            } catch {
+                Self.logger.notice("\(barcodeImageTier.tierName) unavailable for barcode \(barcode): \(error)")
+                sawTransportError = true
+            }
+        }
+
+        if let wikipediaTitle = request.distilleryWikipediaTitle {
+            // WikipediaServicing is quiet by contract (PRD F6: offline or
+            // failure degrades to seed facts, no error surfaced) — a miss
+            // here reads as "no image", not a transport error, since there
+            // is no way to tell the two apart at this layer.
+            if let summary = await wikipedia.summary(forTitles: [wikipediaTitle]),
+               let thumbnail = summary.thumbnailURL, !thumbnail.isEmpty {
+                Self.logger.info("Image search hit via distillery Wikipedia image for \(wikipediaTitle)")
+                await cache.store(.found(url: thumbnail, isDistilleryPhoto: true), forKey: cacheKey)
+                return .found(url: thumbnail, isDistilleryPhoto: true)
             }
         }
 
@@ -254,14 +376,13 @@ struct CascadeImageSearchService: ProductImageSearching {
         // age" query succeeds. All variants share one cache entry: it's
         // still one lookup for one bottle, broadening is just how hard it
         // tries before giving up.
-        var sawTransportError = false
         for query in queries {
             for tier in tiers {
                 do {
                     if let url = try await tier.findImage(query: query) {
                         Self.logger.info("Image search hit via \(tier.tierName) for \"\(query)\"")
-                        await cache.store(.found(url), forKey: cacheKey)
-                        return .found(url)
+                        await cache.store(.found(url: url, isDistilleryPhoto: false), forKey: cacheKey)
+                        return .found(url: url, isDistilleryPhoto: false)
                     }
                 } catch {
                     Self.logger.notice("\(tier.tierName) unavailable for \"\(query)\": \(error)")
@@ -351,21 +472,27 @@ final class StockPhotoBackfill {
     /// should be true for a person explicitly pressing "look up photo"
     /// again — otherwise the cache would just serve back the same hit (or
     /// miss) as before, and the button would look like it does nothing.
-    func fetch(for bottle: Bottle, modelContext: ModelContext, bypassCache: Bool = false) {
+    /// `distilleryWikipediaTitle` comes from the caller's DistilleryStore
+    /// lookup (this type has no store of its own) so a Wikipedia-image
+    /// fallback can be tried; nil is fine, it's just one fewer source.
+    func fetch(
+        for bottle: Bottle, modelContext: ModelContext,
+        distilleryWikipediaTitle: String? = nil, bypassCache: Bool = false
+    ) {
         guard !inFlightBottleIDs.contains(bottle.id) else { return }
         inFlightBottleIDs.insert(bottle.id)
         unavailableBottleIDs.remove(bottle.id)
         let id = bottle.id
-        let name = bottle.name
-        let distilleryName = bottle.distilleryName
-        let age = bottle.ageStatement
+        let request = ImageLookupRequest(
+            name: bottle.name, distilleryName: bottle.distilleryName, age: bottle.ageStatement,
+            barcode: bottle.barcode, distilleryWikipediaTitle: distilleryWikipediaTitle
+        )
         Task {
             defer { inFlightBottleIDs.remove(id) }
-            switch await search.findImage(
-                name: name, distilleryName: distilleryName, age: age, bypassCache: bypassCache
-            ) {
-            case .found(let url):
+            switch await search.findImage(request: request, bypassCache: bypassCache) {
+            case .found(let url, let isDistilleryPhoto):
                 bottle.stockPhotoURL = url
+                bottle.isDistilleryPhoto = isDistilleryPhoto
                 try? modelContext.save()
             case .notFound:
                 break
@@ -388,7 +515,7 @@ extension EnvironmentValues {
 /// Installed when launched with -uiTestLookupStub, matching the other
 /// service stubs.
 struct StubProductImageSearchService: ProductImageSearching {
-    func findImage(name: String, distilleryName: String, age: Int?, bypassCache: Bool) async -> ImageLookupResult {
+    func findImage(request: ImageLookupRequest, bypassCache: Bool) async -> ImageLookupResult {
         .notFound
     }
 }
