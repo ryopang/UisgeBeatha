@@ -4,4 +4,5 @@ import SwiftUI
 /// view (autocomplete, lookup result matching) can read it.
 extension EnvironmentValues {
     @Entry var distilleryStore = DistilleryStore(distilleries: [])
+    @Entry var expressionStore = ExpressionStore(expressions: [])
 }

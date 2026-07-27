@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import OSLog
 
@@ -49,8 +50,14 @@ actor DiskCache<Value: Codable & Sendable> {
         }
     }
 
+    /// A hash of the key, not a character-substitution of it — collapsing
+    /// every non-alphanumeric character to "_" meant "Glen Grant 12" and
+    /// "Glen-Grant-12" (or any two keys differing only in punctuation)
+    /// silently shared one cache file, each one clobbering the other's
+    /// entry. A hash has no such collisions for distinct keys.
     private func fileURL(forKey key: String) -> URL {
-        let safe = key.map { $0.isLetter || $0.isNumber ? $0 : "_" }
-        return directory.appendingPathComponent(String(safe) + ".json")
+        let digest = SHA256.hash(data: Data(key.utf8))
+        let hex = digest.map { String(format: "%02x", $0) }.joined()
+        return directory.appendingPathComponent(hex + ".json")
     }
 }

@@ -10,6 +10,7 @@ struct BottleDetailView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.imageStore) private var imageStore
+    @Environment(\.distilleryStore) private var distilleryStore
     @Environment(\.stockPhotoBackfill) private var stockPhotoBackfill
     @Environment(\.dismiss) private var dismiss
 
@@ -20,6 +21,11 @@ struct BottleDetailView: View {
     @State private var noteBeingEdited: TastingNote?
     @State private var notePendingDelete: TastingNote?
     @State private var selectedPhotoItem: PhotosPickerItem?
+    /// Decoded off the main actor (see `loadHeroPhoto`) — a synchronous
+    /// `UIImage(contentsOfFile:)` on a full-size (up to 2000px) stored
+    /// photo during body evaluation was a measured push hitch.
+    @State private var heroImage: UIImage?
+    @State private var heroThumbnail: UIImage?
 
     private static let logger = Logger(subsystem: "com.ryo.UisgeBeatha", category: "BottleDetail")
 
@@ -114,11 +120,26 @@ struct BottleDetailView: View {
 
     private var heroSection: some View {
         Group {
-            if let filename = bottle.userPhotoFilename,
-               let image = UIImage(contentsOfFile: imageStore.imageURL(for: filename).path) {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
+            if let filename = bottle.userPhotoFilename {
+                Group {
+                    if let heroImage {
+                        Image(uiImage: heroImage)
+                            .resizable()
+                            .scaledToFill()
+                    } else if let heroThumbnail {
+                        // The thumbnail is tiny (ImageStore caps it at
+                        // 300px) and decodes near-instantly, so it stands
+                        // in while the full-size photo loads off-main.
+                        Image(uiImage: heroThumbnail)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        heroPlaceholder
+                    }
+                }
+                .task(id: filename) {
+                    await loadHeroPhoto(filename: filename)
+                }
             } else if let urlString = bottle.stockPhotoURL, let url = URL(string: urlString) {
                 AsyncImage(url: url) { image in
                     image.resizable().scaledToFit()
@@ -137,14 +158,58 @@ struct BottleDetailView: View {
         // the page instead of sitting flush with it.
         .heroShadow()
         .accessibilityHidden(true)
+        .overlay(alignment: .bottomTrailing) {
+            // A distillery photo is always genuinely that distillery, but
+            // never a photo of this specific bottle — labelled honestly
+            // rather than passed off as a product shot (L6.3). Left outside
+            // the image's accessibilityHidden scope above: unlike the
+            // decorative photo itself, this caption is information a
+            // VoiceOver user should get too.
+            if bottle.userPhotoFilename == nil, bottle.stockPhotoURL != nil, bottle.isDistilleryPhoto {
+                Text(Strings.Detail.distilleryPhotoCaption)
+                    .font(.caption2.weight(.medium))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.thinMaterial, in: Capsule())
+                    .padding(10)
+            }
+        }
     }
 
+    /// With no image of any kind, the hero shows the bottle's *name* as
+    /// text rather than a single-initial monogram — at this size there's
+    /// room for the actual name, and a lone letter told you nothing you
+    /// couldn't already see in the title.
     private var heroPlaceholder: some View {
         RoundedRectangle(cornerRadius: Theme.Radius.hero)
             .fill(.quaternary.opacity(0.5))
             .overlay {
-                MonogramThumbnail(name: bottle.name, regionID: bottle.region, size: 120)
+                Text(bottle.name.isEmpty ? Strings.Form.newTitle : bottle.name)
+                    .font(.title2.weight(Theme.Weight.emphasis))
+                    .multilineTextAlignment(.center)
+                    .minimumScaleFactor(0.6)
+                    .foregroundStyle(RegionCatalog.region(id: bottle.region)?.accentColor ?? .secondary)
+                    .padding(24)
             }
+    }
+
+    /// Decodes off the main actor: thumbnail first (small, near-instant),
+    /// then the full-size photo, so the view never blocks on
+    /// `UIImage(contentsOfFile:)` during body evaluation. Cleared at the
+    /// start so a stale image from a previous filename (a retaken photo)
+    /// never flashes before the new one is ready.
+    private func loadHeroPhoto(filename: String) async {
+        heroImage = nil
+        heroThumbnail = nil
+        let thumbnailURL = imageStore.thumbnailURL(for: filename)
+        let imageURL = imageStore.imageURL(for: filename)
+        heroThumbnail = await Task.detached(priority: .userInitiated) {
+            UIImage(contentsOfFile: thumbnailURL.path)
+        }.value
+        guard !Task.isCancelled else { return }
+        heroImage = await Task.detached(priority: .userInitiated) {
+            UIImage(contentsOfFile: imageURL.path)
+        }.value
     }
 
     private var isSearchingStockPhoto: Bool {
@@ -171,7 +236,11 @@ struct BottleDetailView: View {
                 Button {
                     // A person pressing this again clearly wants a fresh
                     // attempt, not the same cached hit or miss re-served.
-                    stockPhotoBackfill?.fetch(for: bottle, modelContext: modelContext, bypassCache: true)
+                    stockPhotoBackfill?.fetch(
+                        for: bottle, modelContext: modelContext,
+                        distilleryWikipediaTitle: distilleryStore.exactMatch(bottle.distilleryName)?.wikipediaTitle,
+                        bypassCache: true
+                    )
                 } label: {
                     if isSearchingStockPhoto {
                         ProgressView()
@@ -182,6 +251,15 @@ struct BottleDetailView: View {
                 .buttonStyle(.bordered)
                 .disabled(isSearchingStockPhoto)
                 .accessibilityLabel(Strings.Detail.lookUpPhoto)
+                if bottle.userPhotoFilename != nil {
+                    Button(role: .destructive) {
+                        removePhoto()
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityLabel(Strings.Detail.removePhoto)
+                }
             }
             if isSearchingStockPhoto {
                 // Also covers the automatic backfill kicked off right after
@@ -236,19 +314,21 @@ struct BottleDetailView: View {
         .accessibilityElement(children: .combine)
     }
 
-    /// Tappable status: cycles sealed → open → finished.
+    /// Tappable status: cycles (unset →) sealed → open → finished → sealed.
+    /// Never cycles back to unset — clearing is deliberate, via the edit
+    /// form's picker.
     private var statusCell: some View {
         Button {
-            bottle.status = bottle.status.next
+            bottle.status = BottleStatus.next(after: bottle.status)
             persistChanges()
         } label: {
             VStack(alignment: .leading, spacing: 2) {
                 Text(Strings.Detail.status)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text(Strings.Status.label(for: bottle.status))
+                Text(bottle.status.map(Strings.Status.label(for:)) ?? Strings.Detail.statusNotSet)
                     .font(.body)
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(bottle.status == nil ? Color.secondary : Color.accentColor)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
@@ -316,6 +396,19 @@ struct BottleDetailView: View {
         } catch {
             Self.logger.error("Failed to store photo: \(error)")
         }
+    }
+
+    /// Removes the owner's own photo and its files. Any stock or
+    /// distillery photo the lookup found earlier is left in place and
+    /// takes over the hero again; only when there's no image of any kind
+    /// does the hero fall back to the bottle's name as text.
+    private func removePhoto() {
+        guard let filename = bottle.userPhotoFilename else { return }
+        try? imageStore.delete(filename: filename)
+        bottle.userPhotoFilename = nil
+        heroImage = nil
+        heroThumbnail = nil
+        persistChanges()
     }
 
     private func deleteBottle() {

@@ -22,13 +22,22 @@ final class DetailFlowUITests: XCTestCase {
             NSPredicate(format: "label BEGINSWITH 'Status'")
         ).firstMatch
         XCTAssertTrue(statusCell.waitForExistence(timeout: 5), "Detail should show the facts grid")
-        XCTAssertTrue(statusCell.label.contains("Sealed"))
+        // A new bottle starts with no status rather than a presumed Sealed.
+        XCTAssertTrue(
+            statusCell.label.contains("Not set"),
+            "New bottle should start with no status; got \(statusCell.label)"
+        )
 
-        // Tappable status cycles.
+        // Tappable status cycles, starting at Sealed from unset.
+        statusCell.tap()
+        XCTAssertTrue(
+            waitForLabel(of: statusCell, toContain: "Sealed", timeout: 5),
+            "Tapping status from unset should set it to sealed"
+        )
         statusCell.tap()
         XCTAssertTrue(
             waitForLabel(of: statusCell, toContain: "Open", timeout: 5),
-            "Tapping status should cycle sealed to open"
+            "Tapping status again should cycle sealed to open"
         )
 
         // Rating: tap at 70% of the control = 3.5 stars.

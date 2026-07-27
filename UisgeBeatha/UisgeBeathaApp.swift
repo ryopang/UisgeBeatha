@@ -11,6 +11,7 @@ import SwiftUI
 struct UisgeBeathaApp: App {
     let modelContainer: ModelContainer
     let distilleryStore: DistilleryStore
+    let expressionStore: ExpressionStore
     let stockPhotoBackfill: StockPhotoBackfill
 
     init() {
@@ -34,6 +35,16 @@ struct UisgeBeathaApp: App {
             distilleryStore = DistilleryStore(distilleries: [])
         }
 
+        do {
+            expressionStore = try ExpressionStore.loadBundled()
+        } catch {
+            // Label-scan name/age/ABV resolution degrades to OCR-only
+            // reads; nothing else depends on this catalog.
+            Logger(subsystem: "com.ryo.UisgeBeatha", category: "App")
+                .error("Failed to load expression catalog: \(error)")
+            expressionStore = ExpressionStore(expressions: [])
+        }
+
         stockPhotoBackfill = StockPhotoBackfill(search: Self.productImageSearchService())
     }
 
@@ -41,9 +52,10 @@ struct UisgeBeathaApp: App {
         WindowGroup {
             RootTabView()
                 .environment(\.distilleryStore, distilleryStore)
+                .environment(\.expressionStore, expressionStore)
                 .environment(\.barcodeLookup, Self.lookupService())
                 .environment(\.wikipedia, Self.wikipediaService())
-                .environment(\.labelOCR, Self.labelOCRService())
+                .environment(\.labelOCR, Self.labelOCRService(distilleryStore: distilleryStore, expressionStore: expressionStore))
                 .environment(\.stockPhotoBackfill, stockPhotoBackfill)
         }
         .modelContainer(modelContainer)
@@ -67,13 +79,19 @@ struct UisgeBeathaApp: App {
         return WikipediaService()
     }
 
-    private static func labelOCRService() -> any LabelOCRServicing {
+    private static func labelOCRService(
+        distilleryStore: DistilleryStore, expressionStore: ExpressionStore
+    ) -> any LabelOCRServicing {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-uiTestLookupStub") {
             return StubLabelOCRService()
         }
         #endif
-        return VisionLabelOCRService()
+        return VisionLabelOCRService(
+            customWords: VisionLabelOCRService.customWords(
+                distilleryStore: distilleryStore, expressionStore: expressionStore
+            )
+        )
     }
 
     private static func productImageSearchService() -> any ProductImageSearching {

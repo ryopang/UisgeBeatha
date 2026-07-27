@@ -28,9 +28,12 @@ enum ExportService {
         let purchasePrice: Decimal?
         let currencyCode: String
         let purchaseDate: Date?
-        let status: String
+        /// nil when the bottle has no status set — distinct from any of
+        /// the three real states, and preserved as such in the export.
+        let status: String?
         let rating: Double?
         let stockPhotoURL: String?
+        let isDistilleryPhoto: Bool
         let userPhotoFilename: String?
         let dateAdded: Date
         let notes: [NoteExport]
@@ -57,9 +60,10 @@ enum ExportService {
             purchasePrice: bottle.purchasePrice,
             currencyCode: bottle.currencyCode,
             purchaseDate: bottle.purchaseDate,
-            status: bottle.status.rawValue,
+            status: bottle.status?.rawValue,
             rating: bottle.rating,
             stockPhotoURL: bottle.stockPhotoURL,
+            isDistilleryPhoto: bottle.isDistilleryPhoto,
             userPhotoFilename: bottle.userPhotoFilename,
             dateAdded: bottle.dateAdded,
             notes: sortedNotes(of: bottle).map { note in
@@ -105,7 +109,7 @@ enum ExportService {
             fields.append(bottle.purchasePrice.map { "\($0)" } ?? "")
             fields.append(bottle.currencyCode)
             fields.append(bottle.purchaseDate.map { $0.formatted(dateFormat) } ?? "")
-            fields.append(bottle.status.rawValue)
+            fields.append(bottle.status?.rawValue ?? "")
             fields.append(bottle.rating.map { "\($0)" } ?? "")
             fields.append(bottle.dateAdded.formatted(dateFormat))
             fields.append(notes)

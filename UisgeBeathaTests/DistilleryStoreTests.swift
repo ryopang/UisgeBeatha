@@ -90,4 +90,55 @@ struct DistilleryStoreTests {
         #expect(store.bestMatch(for: "Jack Daniel's Tennessee Whiskey") == nil)
         #expect(store.bestMatch(for: "") == nil)
     }
+
+    // MARK: - Short/numeric alias guard (A4: "1770" firing on any label
+    // printing that founding year, "Spey" firing on any mention of the river)
+
+    @Test func shortAliasStillMatchesExactly() {
+        // Autocomplete typing the alias verbatim should still work — only
+        // free-text substring/fuzzy matching is guarded.
+        #expect(store.exactMatch("1770")?.name == "Glasgow Distillery")
+        #expect(store.exactMatch("Spey")?.name == "Speyside Distillery")
+    }
+
+    @Test func shortAliasDoesNotFalsePositiveOnUnrelatedLabelText() {
+        // No real distillery name present in either line — only the risky
+        // short/numeric alias fragment ("1770", "Spey") — so both must miss.
+        #expect(store.containsMatch(in: "ESTABLISHED IN 1770 BY ROYAL CHARTER") == nil)
+        #expect(store.bestMatch(for: "MATURED ON THE BANKS OF THE RIVER SPEY") == nil)
+    }
+
+    @Test func shortPrimaryNameStillMatchesAsSubstring() {
+        // The length/numeric guard applies to aliases, not to a
+        // distillery's own (curated, deliberately chosen) name — "Jura"
+        // and "Oban" are both 4 characters.
+        #expect(store.containsMatch(in: "JURA 10 SINGLE MALT")?.name == "Jura")
+        #expect(store.containsMatch(in: "OBAN WEST HIGHLAND")?.name == "Oban")
+    }
+
+    // MARK: - tieredMatch (label-scan global distillery scoring)
+
+    @Test func tieredMatchReportsExactTierForAnExactName() {
+        let result = store.tieredMatch(for: "Lagavulin")
+        #expect(result?.distillery.name == "Lagavulin")
+        #expect(result?.tier == .exact)
+    }
+
+    @Test func tieredMatchReportsContainsTierForASubstringHit() {
+        let result = store.tieredMatch(for: "THE MACALLAN DOUBLE CASK")
+        #expect(result?.distillery.name == "Macallan")
+        #expect(result?.tier == .contains)
+    }
+
+    @Test func tieredMatchReportsFuzzyTierForAMisspelling() {
+        let result = store.tieredMatch(for: "TALISKFR 10")
+        #expect(result?.distillery.name == "Talisker")
+        #expect(result?.tier == .fuzzyLevenshtein)
+    }
+
+    @Test func matchTierOrdersExactBeforeContainsBeforeFuzzy() {
+        #expect(DistilleryStore.MatchTier.exact < .contains)
+        #expect(DistilleryStore.MatchTier.contains < .fuzzySubset)
+        #expect(DistilleryStore.MatchTier.fuzzySubset < .fuzzyLevenshtein)
+    }
 }
