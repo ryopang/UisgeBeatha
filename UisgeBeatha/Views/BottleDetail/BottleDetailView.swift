@@ -9,7 +9,6 @@ struct BottleDetailView: View {
     @Bindable var bottle: Bottle
 
     @Environment(\.modelContext) private var modelContext
-    @Environment(\.imageStore) private var imageStore
     @Environment(\.distilleryStore) private var distilleryStore
     @Environment(\.stockPhotoBackfill) private var stockPhotoBackfill
     @Environment(\.editorRouter) private var editorRouter
@@ -125,6 +124,8 @@ struct BottleDetailView: View {
                 if let note = notePendingDelete {
                     modelContext.delete(note)
                     persistChanges()
+                    bottle.refreshLastTasted()
+                    persistChanges()
                 }
                 notePendingDelete = nil
             }
@@ -163,7 +164,7 @@ struct BottleDetailView: View {
             // image's accessibilityHidden scope above: unlike the
             // decorative photo itself, this caption is information a
             // VoiceOver user should get too.
-            if bottle.userPhotoFilename == nil, bottle.stockPhotoURL != nil, bottle.isDistilleryPhoto {
+            if bottle.primaryPhoto?.kind == BottlePhotoKind.stock.rawValue, bottle.isDistilleryPhoto {
                 Text(Strings.Detail.distilleryPhotoCaption)
                     .font(.caption2.weight(.semibold))
                     .padding(.horizontal, 8)
@@ -176,16 +177,16 @@ struct BottleDetailView: View {
 
     @ViewBuilder
     private var heroContent: some View {
-        if let filename = bottle.userPhotoFilename {
+        if let photo = bottle.primaryPhoto {
             Group {
                 if let heroImage {
                     Image(uiImage: heroImage)
                         .resizable()
                         .scaledToFit()
                 } else if let heroThumbnail {
-                    // The thumbnail is tiny (ImageStore caps it at 300px)
-                    // and decodes near-instantly, so it stands in while the
-                    // full-size photo loads off-main.
+                    // The thumbnail is tiny (300px) and decodes
+                    // near-instantly, so it stands in while the full-size
+                    // photo decodes off-main.
                     Image(uiImage: heroThumbnail)
                         .resizable()
                         .scaledToFit()
@@ -193,14 +194,10 @@ struct BottleDetailView: View {
                     heroPlaceholder
                 }
             }
-            .task(id: filename) {
-                await loadHeroPhoto(filename: filename)
-            }
-        } else if let urlString = bottle.stockPhotoURL, let url = URL(string: urlString) {
-            AsyncImage(url: url) { image in
-                image.resizable().scaledToFit()
-            } placeholder: {
-                heroPlaceholder
+            // Keyed on the photo's id, so a photo replaced here or by
+            // another device reloads.
+            .task(id: photo.id) {
+                await loadHeroPhoto(photo)
             }
         } else {
             heroPlaceholder
@@ -221,21 +218,20 @@ struct BottleDetailView: View {
     }
 
     /// Decodes off the main actor: thumbnail first (small, near-instant),
-    /// then the full-size photo, so the view never blocks on
-    /// `UIImage(contentsOfFile:)` during body evaluation. Cleared at the
-    /// start so a stale image from a previous filename (a retaken photo)
-    /// never flashes before the new one is ready.
-    private func loadHeroPhoto(filename: String) async {
+    /// then the full-size photo, so the view never blocks on image decoding
+    /// during body evaluation. Cleared at the start so a stale image from a
+    /// previous photo never flashes before the new one is ready.
+    private func loadHeroPhoto(_ photo: BottlePhoto) async {
         heroImage = nil
         heroThumbnail = nil
-        let thumbnailURL = imageStore.thumbnailURL(for: filename)
-        let imageURL = imageStore.imageURL(for: filename)
+        let thumbnailData = photo.thumbnailData
+        let imageData = photo.imageData
         heroThumbnail = await Task.detached(priority: .userInitiated) {
-            UIImage(contentsOfFile: thumbnailURL.path)
+            thumbnailData.flatMap { UIImage(data: $0) }
         }.value
         guard !Task.isCancelled else { return }
         heroImage = await Task.detached(priority: .userInitiated) {
-            UIImage(contentsOfFile: imageURL.path)
+            imageData.flatMap { UIImage(data: $0) }?.preparingForDisplay()
         }.value
     }
 
@@ -269,7 +265,7 @@ struct BottleDetailView: View {
                 )
             }
             .disabled(isSearchingStockPhoto)
-            if bottle.userPhotoFilename != nil {
+            if bottle.photo(of: .user) != nil {
                 Button(Strings.Detail.removePhoto, systemImage: "trash", role: .destructive) {
                     removePhoto()
                 }
@@ -301,6 +297,12 @@ struct BottleDetailView: View {
             Text(Strings.Detail.lookUpPhotoFailure)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+        } else if bottle.primaryPhoto?.kind == BottlePhotoKind.stock.rawValue,
+                  let attribution = bottle.stockPhotoAttribution {
+            // Attribution travels with every downloaded photo.
+            Text(attribution)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -321,7 +323,7 @@ struct BottleDetailView: View {
             statusCell
             factCell(
                 Strings.Detail.price,
-                bottle.purchasePrice.map { $0.formatted(.currency(code: bottle.currencyCode)) } ?? "—"
+                bottle.price.map { $0.formatted(.currency(code: bottle.currencyCode)) } ?? "—"
             )
             factCell(
                 Strings.Detail.purchased,
@@ -436,40 +438,30 @@ struct BottleDetailView: View {
     private func applyPhoto(_ data: Data) {
         Task {
             do {
-                // Encode off the main actor, then swap: save the new files
-                // before removing the old ones, so a failed save never
+                // Encoded off the main actor; the old photo is replaced
+                // only once the new one is built, so a failed save never
                 // costs the person their existing photo.
-                let newFilename = try await imageStore.save(imageData: data)
-                if let oldFilename = bottle.userPhotoFilename {
-                    try? imageStore.delete(filename: oldFilename)
-                    ThumbnailCache.shared.removeImage(forKey: oldFilename)
-                }
-                bottle.userPhotoFilename = newFilename
-                persistChanges()
+                try await BottlePhotos.set(data, kind: .user, for: bottle, in: modelContext)
             } catch {
                 Self.logger.error("Failed to store photo: \(error)")
             }
         }
     }
 
-    /// Removes the owner's own photo and its files. Any stock or
-    /// distillery photo the lookup found earlier is left in place and
-    /// takes over the hero again; only when there's no image of any kind
-    /// does the hero fall back to the bottle's name as text.
+    /// Removes the owner's own photo. Any stock or distillery photo found
+    /// earlier is left in place and takes over the hero again; only when
+    /// there's no image of any kind does the hero fall back to the
+    /// bottle's name as text.
     private func removePhoto() {
-        guard let filename = bottle.userPhotoFilename else { return }
-        try? imageStore.delete(filename: filename)
-        ThumbnailCache.shared.removeImage(forKey: filename)
-        bottle.userPhotoFilename = nil
-        heroImage = nil
-        heroThumbnail = nil
-        persistChanges()
+        do {
+            try BottlePhotos.remove(.user, from: bottle, in: modelContext)
+        } catch {
+            Self.logger.error("Failed to remove photo: \(error)")
+        }
     }
 
     private func deleteBottle() {
-        if let filename = bottle.userPhotoFilename {
-            try? imageStore.delete(filename: filename)
-        }
+        // Photos and notes go with it (cascade).
         modelContext.delete(bottle)
         persistChanges()
         dismiss()

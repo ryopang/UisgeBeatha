@@ -10,6 +10,8 @@ final class PolishFlowUITests: XCTestCase {
 
     func testDistilleryCardAndExportLinks() throws {
         let app = XCUIApplication()
+        // The simulator has no iCloud account; keep the store local.
+        app.launchArguments += ["-disableCloudSync"]
         app.launchArguments += ["-uiTestLookupStub"]
         app.launch()
 

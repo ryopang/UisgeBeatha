@@ -88,6 +88,7 @@ nonisolated enum Strings {
         static let sortByName = "Name"
         static let sortByDistillery = "Distillery"
         static let sortByRegion = "Region"
+        static let sortByLastTasted = "Last Tasted"
         static let addBottle = "Add Bottle"
         static let emptyTitle = "An Empty Shelf"
         static let emptyMessage = "Your collection starts with a single bottle."
@@ -161,6 +162,12 @@ nonisolated enum Strings {
         static let removePhoto = "Remove Photo"
         static let lookUpPhotoFailure = "Couldn't look up a photo right now. Try again in a bit."
         static let distilleryPhotoCaption = "Distillery photo"
+        static let photoViaCommons = "Photo via Wikimedia Commons"
+        static let photoViaOpenFoodFacts = "Photo via Open Food Facts"
+
+        static func photoVia(_ host: String) -> String {
+            "Photo via \(host)"
+        }
         static let distillery = "Distillery"
         static let region = "Region"
         static let abv = "ABV"
@@ -236,7 +243,42 @@ nonisolated enum Strings {
         static let title = "Settings"
         static let aboutSection = "About"
         static let version = "Version"
-        static let dataNotice = "Your collection stays on this device. Nothing is uploaded anywhere."
+        static let dataNotice = "Your collection lives on this device. When you're signed in to iCloud it also syncs privately through your own iCloud account."
+        static let syncSection = "iCloud Sync"
+        static let syncStatus = "Status"
+        static let privacySection = "Privacy"
+        static let privacyNetwork = "To find a bottle, its photo and its distillery, the barcode or search words are sent to Open Food Facts, UPCitemdb and Wikimedia. No account or personal identifier goes with them."
+        static let privacyICloud = "Your collection, notes and photos sync through your private iCloud database. They are never shared, and nobody else, including the developer, can see them."
+
+        static func syncTitle(_ status: SyncStatus) -> String {
+            switch status {
+            case .checking: "Checking…"
+            case .on: "On"
+            case .off: "Off"
+            case .accountUnavailable: "Unavailable"
+            }
+        }
+
+        static func syncExplanation(_ status: SyncStatus) -> String {
+            switch status {
+            case .checking:
+                "Checking your iCloud account."
+            case .on:
+                "Your collection syncs privately across your devices through your iCloud account."
+            case .off(.disabled):
+                "Sync is turned off for this session. Your collection stays on this device."
+            case .off(.cloudKitUnavailable):
+                "Sync isn't available in this build. Your collection is safe on this device."
+            case .accountUnavailable(.signedOut):
+                "Sign in to iCloud in the Settings app to sync your collection. Everything works on this device in the meantime."
+            case .accountUnavailable(.restricted):
+                "iCloud is restricted on this device, so your collection stays here."
+            case .accountUnavailable(.temporarilyUnavailable):
+                "iCloud is temporarily unavailable. Your collection will sync when it returns."
+            case .accountUnavailable(.unknown):
+                "Couldn't reach your iCloud account. Your collection is safe on this device and will sync when it can."
+            }
+        }
         static let exportSection = "Export"
         static let exportJSON = "Export Collection as JSON"
         static let exportCSV = "Export Collection as CSV"

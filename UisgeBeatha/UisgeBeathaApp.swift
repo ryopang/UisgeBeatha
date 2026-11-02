@@ -12,7 +12,7 @@ struct UisgeBeathaApp: App {
     /// Opening the store can fail (corruption, a failed migration). The
     /// app shows a recovery screen rather than crashing on every launch.
     enum ContainerState {
-        case ready(ModelContainer)
+        case ready(ModelContainer, CloudSyncMonitor)
         case failed(String)
     }
 
@@ -51,8 +51,9 @@ struct UisgeBeathaApp: App {
     var body: some Scene {
         WindowGroup {
             switch containerState {
-            case .ready(let container):
+            case .ready(let container, let syncMonitor):
                 RootTabView()
+                    .environment(\.syncMonitor, syncMonitor)
                     .environment(\.distilleryStore, distilleryStore)
                     .environment(\.expressionStore, expressionStore)
                     .environment(\.barcodeLookup, Self.lookupService())
@@ -60,6 +61,7 @@ struct UisgeBeathaApp: App {
                     .environment(\.labelOCR, Self.labelOCRService(distilleryStore: distilleryStore, expressionStore: expressionStore))
                     .environment(\.stockPhotoBackfill, stockPhotoBackfill)
                     .modelContainer(container)
+                    .task { await syncMonitor.run() }
             case .failed(let message):
                 ContainerRecoveryView(
                     errorDescription: message,
@@ -79,7 +81,8 @@ struct UisgeBeathaApp: App {
 
     private static func openContainer() -> ContainerState {
         do {
-            return .ready(try AppContainer.make())
+            let opened = try AppContainer.open()
+            return .ready(opened.container, CloudSyncMonitor(mode: opened.mode))
         } catch {
             logger.error("Failed to create ModelContainer: \(error)")
             return .failed(String(describing: error))

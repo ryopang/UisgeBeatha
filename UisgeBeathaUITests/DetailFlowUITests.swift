@@ -12,6 +12,8 @@ final class DetailFlowUITests: XCTestCase {
 
     func testDetailRatingNotesWheelAndPersistence() throws {
         let app = XCUIApplication()
+        // The simulator has no iCloud account; keep the store local.
+        app.launchArguments += ["-disableCloudSync"]
         app.launch()
 
         addBottle(app, name: "Talisker 10", distilleryPrefix: "Talisk", suggestionRegion: "Islands")

@@ -175,6 +175,8 @@ struct TastingNoteEditorView: View {
         }
         do {
             try modelContext.save()
+            bottle.refreshLastTasted()
+            try modelContext.save()
             dismiss()
         } catch {
             Self.logger.error("Failed to save tasting note: \(error)")

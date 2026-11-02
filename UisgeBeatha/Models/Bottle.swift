@@ -35,4 +35,4 @@ enum BottleStatus: String, Codable, CaseIterable, Sendable {
 
 /// The current schema's bottle model. Views and services use this name;
 /// only the schema files know which `SchemaV<N>` it points at.
-typealias Bottle = SchemaV1.Bottle
+typealias Bottle = SchemaV2.Bottle

@@ -11,6 +11,8 @@ final class MapFlowUITests: XCTestCase {
 
     func testMapBadgesRegionSheetAndTogglePersistence() throws {
         let app = XCUIApplication()
+        // The simulator has no iCloud account; keep the store local.
+        app.launchArguments += ["-disableCloudSync"]
         app.launch()
 
         // Seed one Islay bottle so exactly one region has a count.

@@ -20,7 +20,6 @@ struct CollectionView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query private var bottles: [Bottle]
 
-    @Environment(\.imageStore) private var imageStore
     @Environment(\.tabRouter) private var tabRouter
 
     enum ViewMode: String, CaseIterable {
@@ -347,10 +346,7 @@ struct CollectionView: View {
         if bottle.id == selection.wrappedValue {
             storedSelection = ""
         }
-        if let filename = bottle.userPhotoFilename {
-            try? imageStore.delete(filename: filename)
-            ThumbnailCache.shared.removeImage(forKey: filename)
-        }
+        // Photos and notes are deleted with the bottle (cascade).
         modelContext.delete(bottle)
         persistChanges()
     }

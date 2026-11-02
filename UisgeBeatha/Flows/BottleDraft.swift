@@ -54,7 +54,7 @@ final class BottleDraft {
         isNAS = bottle.map { $0.ageStatement == nil } ?? false
         age = bottle?.ageStatement ?? prefill?.age
         caskType = bottle?.caskType ?? prefill?.caskType ?? ""
-        price = bottle?.purchasePrice
+        price = bottle?.price
         hasPurchaseDate = bottle?.purchaseDate != nil
         purchaseDate = bottle?.purchaseDate ?? .now
         status = bottle?.status
@@ -206,7 +206,7 @@ final class BottleDraft {
         target.ageStatement = isNAS ? nil : age
         let trimmedCask = caskType.trimmingCharacters(in: .whitespaces)
         target.caskType = trimmedCask.isEmpty ? nil : trimmedCask
-        target.purchasePrice = price
+        target.price = price
         target.purchaseDate = hasPurchaseDate ? purchaseDate : nil
         target.status = status
         // Canonical form when it's a real GTIN, so duplicate detection

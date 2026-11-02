@@ -5,6 +5,7 @@ import SwiftUI
 /// Settings tab (PRD F8): export via ShareLink, About, debug lookup source.
 struct SettingsView: View {
     @Query private var bottles: [Bottle]
+    @Environment(\.syncMonitor) private var syncMonitor
 
     @State private var jsonFileURL: URL?
     @State private var csvFileURL: URL?
@@ -37,6 +38,29 @@ struct SettingsView: View {
                     Text(Strings.Settings.exportSection)
                 } footer: {
                     Text(Strings.Settings.exportPhotosNote)
+                }
+
+                if let syncMonitor {
+                    Section {
+                        LabeledContent(
+                            Strings.Settings.syncStatus,
+                            value: Strings.Settings.syncTitle(syncMonitor.status)
+                        )
+                        Text(Strings.Settings.syncExplanation(syncMonitor.status))
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    } header: {
+                        Text(Strings.Settings.syncSection)
+                    }
+                }
+
+                Section(Strings.Settings.privacySection) {
+                    Text(Strings.Settings.privacyNetwork)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Text(Strings.Settings.privacyICloud)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section(Strings.Settings.aboutSection) {

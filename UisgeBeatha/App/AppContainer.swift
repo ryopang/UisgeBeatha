@@ -1,6 +1,23 @@
 import Foundation
 import SwiftData
 
+/// How the store is running.
+nonisolated enum SyncMode: Equatable, Sendable {
+    /// Mirrored to the person's private iCloud database.
+    case cloud
+    /// Local only. `reason` says why, for Settings.
+    case localOnly(reason: LocalOnlyReason)
+
+    nonisolated enum LocalOnlyReason: Equatable, Sendable {
+        /// Turned off with a launch argument (tests, previews, debugging).
+        case disabled
+        /// The container couldn't be created with CloudKit, usually
+        /// because the iCloud capability or entitlement is missing from
+        /// this build. The app keeps working on the same data.
+        case cloudKitUnavailable(String)
+    }
+}
+
 /// Builds the app's `ModelContainer` and owns the recovery operations for
 /// when that fails.
 ///
@@ -9,15 +26,43 @@ import SwiftData
 /// container creation as something that can fail and shows
 /// `ContainerRecoveryView` instead.
 enum AppContainer {
-    /// The schema every new build opens. Phase 3 points this at `SchemaV2`.
+    /// The CloudKit container for the person's private database.
+    static let cloudKitContainerID = "iCloud.com.ryo.UisgeBeatha"
+
+    /// The schema every new build opens.
     static var currentSchema: Schema {
-        Schema(versionedSchema: SchemaV1.self)
+        Schema(versionedSchema: SchemaV2.self)
     }
 
-    static func make(inMemory: Bool = false) throws -> ModelContainer {
+    /// Launch argument that forces a local-only store.
+    static let disableSyncArgument = "-disableCloudSync"
+
+    /// Opens the store, with CloudKit sync if it can, and without if not.
+    ///
+    /// CloudKit-backed creation fails when the build has no iCloud
+    /// entitlement. That must not strand the person's collection, so it
+    /// falls back to the same store without mirroring and reports why.
+    /// Only if that also fails does the caller see an error.
+    static func open(
+        arguments: [String] = ProcessInfo.processInfo.arguments
+    ) throws -> (container: ModelContainer, mode: SyncMode) {
+        if arguments.contains(disableSyncArgument) {
+            return (try make(syncing: false), .localOnly(reason: .disabled))
+        }
+        do {
+            return (try make(syncing: true), .cloud)
+        } catch {
+            let container = try make(syncing: false)
+            return (container, .localOnly(reason: .cloudKitUnavailable(String(describing: error))))
+        }
+    }
+
+    /// `inMemory` stores never sync.
+    static func make(inMemory: Bool = false, syncing: Bool = false) throws -> ModelContainer {
         let configuration = ModelConfiguration(
             schema: currentSchema,
-            isStoredInMemoryOnly: inMemory
+            isStoredInMemoryOnly: inMemory,
+            cloudKitDatabase: (syncing && !inMemory) ? .private(cloudKitContainerID) : .none
         )
         return try ModelContainer(
             for: currentSchema,

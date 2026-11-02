@@ -31,7 +31,6 @@ struct BottleFormView: View {
     @Environment(\.distilleryStore) private var distilleryStore
     @Environment(\.expressionStore) private var expressionStore
     @Environment(\.bottleExtractor) private var bottleExtractor
-    @Environment(\.imageStore) private var imageStore
     @Environment(\.stockPhotoBackfill) private var stockPhotoBackfill
     private var dismiss = ContextualDismiss()
 
@@ -263,41 +262,48 @@ struct BottleFormView: View {
         draft.resolveRegionIfNeeded(using: distilleryStore)
         guard draft.canSave, !isSaving else { return }
         isSaving = true
+
+        // Everything the work after dismissal needs is read now: the form
+        // (and its state) is gone by then.
+        let photoData = draft.labelPhotoData
+        let stockPhotoURL = draft.prefillStockPhotoURL
+        let context = modelContext
+        let backfill = stockPhotoBackfill
+        let isNewBottle = bottle == nil
+        let target = bottle ?? Bottle()
+        draft.apply(to: target)
+        if isNewBottle {
+            // The lookup's stock photo URL is remembered so it can be
+            // downloaded once below (or retried later if offline).
+            target.stockPhotoURL = stockPhotoURL
+            context.insert(target)
+        }
+        let wikipediaTitle = distilleryStore.exactMatch(target.distilleryName)?.wikipediaTitle
+
+        do {
+            try context.save()
+        } catch {
+            Self.logger.error("Failed to save bottle: \(error)")
+            isSaving = false
+            return
+        }
+        if isNewBottle { Haptics.success() }
+        dismiss()
+        onSaved?()
+
+        guard isNewBottle else { return }
+        // Photos come after the save, so encoding or a download never holds
+        // up the person.
         Task {
-            let target = bottle ?? Bottle()
-            draft.apply(to: target)
-            let isNewBottle = bottle == nil
-            if isNewBottle {
-                // Keep the lookup's stock photo so rows and the detail hero can
-                // show it until the owner takes their own (PRD F4).
-                target.stockPhotoURL = draft.prefillStockPhotoURL
-                // The photo captured for label scanning is the best available
-                // photo of this exact bottle: save it as the user photo rather
-                // than going to the internet for a stand-in. Encoded off the
-                // main actor.
-                if let photoData = draft.labelPhotoData,
-                   let filename = try? await imageStore.save(imageData: photoData) {
-                    target.userPhotoFilename = filename
-                }
-                modelContext.insert(target)
-            }
-            do {
-                try modelContext.save()
-                if isNewBottle { Haptics.success() }
-                dismiss()
-                onSaved?()
-                // Only worth searching when the bottle still has no photo at
-                // all: a barcode-hit stock photo or a label-scan user photo
-                // both mean there's nothing to backfill.
-                if isNewBottle, target.stockPhotoURL == nil, target.userPhotoFilename == nil {
-                    stockPhotoBackfill?.fetch(
-                        for: target, modelContext: modelContext,
-                        distilleryWikipediaTitle: distilleryStore.exactMatch(target.distilleryName)?.wikipediaTitle
-                    )
-                }
-            } catch {
-                Self.logger.error("Failed to save bottle: \(error)")
-                isSaving = false
+            if let photoData {
+                // The photo captured for label scanning is the best photo
+                // of this exact bottle: keep it as the bottle's own.
+                try? await BottlePhotos.set(photoData, kind: .user, for: target, in: context)
+            } else if let stockPhotoURL {
+                await StockPhotoImporter().importPhoto(from: stockPhotoURL, for: target, in: context)
+            } else {
+                // No photo of any kind yet: look for a stand-in.
+                backfill?.fetch(for: target, modelContext: context, distilleryWikipediaTitle: wikipediaTitle)
             }
         }
     }

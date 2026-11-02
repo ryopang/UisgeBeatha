@@ -507,6 +507,10 @@ final class StockPhotoBackfill {
                 bottle.stockPhotoURL = url
                 bottle.isDistilleryPhoto = isDistilleryPhoto
                 try? modelContext.save()
+                // Download it once and keep it, rather than hotlinking the
+                // URL on every view. If the download fails the URL stays
+                // remembered and the store maintenance retries later.
+                await StockPhotoImporter().importPhoto(from: url, for: bottle, in: modelContext)
             case .notFound:
                 break
             case .unavailable:
