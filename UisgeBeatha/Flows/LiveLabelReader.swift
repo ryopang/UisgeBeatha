@@ -59,9 +59,12 @@ final class LiveLabelReader {
         let snapshot = lines
         let distilleries = distilleryStore
         let expressions = expressionStore
-        let parsed: LabelScanResult? = snapshot.isEmpty ? nil : await Task.detached(priority: .userInitiated) {
-            LabelParser.parse(lines: snapshot, distilleryStore: distilleries, expressionStore: expressions)
-        }.value
+        var parsed: LabelScanResult?
+        if !snapshot.isEmpty {
+            parsed = await Task.detached(priority: .userInitiated) {
+                LabelParser.parse(lines: snapshot, distilleryStore: distilleries, expressionStore: expressions)
+            }.value
+        }
         guard !Task.isCancelled else { return }
 
         result = parsed
