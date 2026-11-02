@@ -2,7 +2,7 @@ import Foundation
 
 /// Loads the bundled distillery seed data and matches free-form text
 /// (typed names, scanned product titles) against it.
-struct DistilleryStore: Sendable {
+nonisolated struct DistilleryStore: Sendable {
     enum LoadError: Error {
         case resourceMissing
     }
@@ -22,7 +22,7 @@ struct DistilleryStore: Sendable {
     /// false-positive risk that a distillery's own curated primary name
     /// doesn't carry. Those short aliases still work for an *exact* typed
     /// match (autocomplete), just not as free-text substring/fuzzy bait.
-    private struct NormalizedEntry {
+    nonisolated private struct NormalizedEntry {
         let distillery: Distillery
         let normalizedName: String
         let eligibleAliasCandidates: [String]

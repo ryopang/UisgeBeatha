@@ -71,8 +71,10 @@ struct BottleDetailView: View {
         }
         .fullScreenCover(isPresented: $showingCamera) {
             CameraPicker { image in
-                if let data = image.jpegData(compressionQuality: 0.9) {
-                    applyPhoto(data)
+                Task {
+                    if let data = await PhotoEncoder.jpegDataOffMain(from: image) {
+                        applyPhoto(data)
+                    }
                 }
             }
             .ignoresSafeArea()
@@ -404,15 +406,21 @@ struct BottleDetailView: View {
     // MARK: - Actions
 
     private func applyPhoto(_ data: Data) {
-        do {
-            // Replacing a photo removes the old files first (PRD F5).
-            if let oldFilename = bottle.userPhotoFilename {
-                try? imageStore.delete(filename: oldFilename)
+        Task {
+            do {
+                // Encode off the main actor, then swap: save the new files
+                // before removing the old ones, so a failed save never
+                // costs the person their existing photo.
+                let newFilename = try await imageStore.save(imageData: data)
+                if let oldFilename = bottle.userPhotoFilename {
+                    try? imageStore.delete(filename: oldFilename)
+                    ThumbnailCache.shared.removeImage(forKey: oldFilename)
+                }
+                bottle.userPhotoFilename = newFilename
+                persistChanges()
+            } catch {
+                Self.logger.error("Failed to store photo: \(error)")
             }
-            bottle.userPhotoFilename = try imageStore.save(imageData: data)
-            persistChanges()
-        } catch {
-            Self.logger.error("Failed to store photo: \(error)")
         }
     }
 
@@ -423,6 +431,7 @@ struct BottleDetailView: View {
     private func removePhoto() {
         guard let filename = bottle.userPhotoFilename else { return }
         try? imageStore.delete(filename: filename)
+        ThumbnailCache.shared.removeImage(forKey: filename)
         bottle.userPhotoFilename = nil
         heroImage = nil
         heroThumbnail = nil

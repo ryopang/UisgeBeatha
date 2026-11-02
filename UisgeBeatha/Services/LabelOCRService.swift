@@ -231,10 +231,9 @@ nonisolated struct LabelScanResult: Sendable, Equatable {
 /// Turns OCR'd label lines into a best-guess prefill (PRD F1's miss path),
 /// sourced from a photo instead of a product database. Synchronous and
 /// pure so it's testable with plain string fixtures, no Vision or camera
-/// involved. Not `nonisolated`: it calls DistilleryStore/ExpressionStore
-/// matching, which (like the rest of the app) is main-actor isolated by
-/// the project's default — this is only ever called from the main actor
-/// (the form's OCR handler, or tests) anyway.
+/// involved. `nonisolated` (as are DistilleryStore and ExpressionStore) so
+/// the live scanner can parse off the main actor instead of on every
+/// camera frame.
 ///
 /// Rewritten after measuring the original version against realistic label
 /// fixtures at 5/12 all-three-fields-correct. Three changes account for
@@ -252,7 +251,7 @@ nonisolated struct LabelScanResult: Sendable, Equatable {
 ///    expression-catalog or descriptor-line name, and the age — not lifted
 ///    as one raw OCR line, which was almost always either the bare
 ///    distillery name or a boilerplate sentence.
-enum LabelParser {
+nonisolated enum LabelParser {
     static func parse(
         lines: [String],
         distilleryStore: DistilleryStore,
@@ -484,7 +483,7 @@ enum LabelParser {
     }
 }
 
-private extension Array {
+nonisolated private extension Array {
     subscript(safe index: Int) -> Element? {
         indices.contains(index) ? self[index] : nil
     }

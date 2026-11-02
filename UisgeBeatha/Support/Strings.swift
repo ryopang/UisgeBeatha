@@ -22,6 +22,7 @@ nonisolated enum Strings {
     enum Scan {
         static let title = "Scan"
         static let lookingUp = "Looking up…"
+        static let cancelLookup = "Cancel"
         static let scanAgain = "Scan Again"
         static let cameraUnavailable = "Scanning needs a camera. Enter the barcode digits instead."
         static let barcodeField = "Barcode"
@@ -231,6 +232,17 @@ nonisolated enum Strings {
         static let exportPhotosNote = "Photos are not included in exports."
         static let debugSection = "Debug"
         static let lastLookupSource = "Last Lookup Source"
+    }
+
+    enum Recovery {
+        static let heading = "Your collection couldn't be opened"
+        static let explanation = "Nothing has been deleted. Try again first. If it keeps failing, save a copy of your data before resetting, so it can be recovered later."
+        static let retry = "Try Again"
+        static let saveCopy = "Save a Copy of My Data"
+        static let reset = "Reset and Start Fresh"
+        static let resetConfirmTitle = "Start with an empty collection?"
+        static let resetConfirmMessage = "This deletes the collection stored on this device. A copy you saved stays safe."
+        static let resetConfirmAction = "Delete and Start Fresh"
     }
 
     enum Accessibility {

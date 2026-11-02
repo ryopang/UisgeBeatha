@@ -19,14 +19,14 @@ struct InFormScannerSheet: View {
     @Environment(\.labelOCR) private var labelOCR
     @Environment(\.dismiss) private var dismiss
 
-    @State private var recognizedTextLines: [String] = []
+    /// Throttled, off-main parsing of the live text, shared with the Scan
+    /// tab. Created on first appearance because it needs environment
+    /// values.
+    @State private var reader: LiveLabelReader?
     @State private var liveScanner: DataScannerViewController?
 
     private var liveLabelResult: LabelScanResult? {
-        guard !recognizedTextLines.isEmpty else { return nil }
-        return LabelParser.parse(
-            lines: recognizedTextLines, distilleryStore: distilleryStore, expressionStore: expressionStore
-        )
+        reader?.result
     }
 
     var body: some View {
@@ -34,11 +34,18 @@ struct InFormScannerSheet: View {
             LiveScannerView(
                 mode: mode,
                 onScan: mode == .barcode ? { onBarcode($0) } : nil,
-                onTextUpdate: mode == .label ? { recognizedTextLines = $0 } : nil,
+                onTextUpdate: mode == .label ? { reader?.update(lines: $0) } : nil,
                 onScannerReady: { liveScanner = $0 }
             )
             .id(mode)
             .ignoresSafeArea()
+            .task {
+                if reader == nil {
+                    reader = LiveLabelReader(
+                        distilleryStore: distilleryStore, expressionStore: expressionStore
+                    )
+                }
+            }
 
             VStack {
                 Text(mode.instruction)
@@ -87,15 +94,11 @@ struct InFormScannerSheet: View {
     }
 
     /// Grabs a still frame so an accepted label read still yields a photo
-    /// of the bottle, then hands lines and photo back to the form.
-    ///
-    /// The captured frame is re-read with the tuned recognizer (see
-    /// `ScanView.refinedResult` for why: DataScanner's internal recognition
-    /// can't take the seed catalog as `customWords` or turn English
-    /// autocorrection off) and its lines are preferred when they resolve a
-    /// distillery.
+    /// of the bottle, then hands lines and photo back to the form. The
+    /// frame is re-read with the tuned recognizer (see `LabelRefinement`)
+    /// and its lines are preferred when they resolve a distillery.
     private func accept(_ result: LabelScanResult) {
-        let liveLines = recognizedTextLines
+        let liveLines = reader?.lines ?? []
         guard let scanner = liveScanner else {
             onLabel(liveLines, nil)
             return
@@ -105,16 +108,12 @@ struct InFormScannerSheet: View {
                 onLabel(liveLines, nil)
                 return
             }
-            let photoData = image.jpegData(compressionQuality: 0.9)
-            if let refinedLines = try? await labelOCR.recognizeText(in: image),
-               let refined = LabelParser.parse(
-                   lines: refinedLines, distilleryStore: distilleryStore, expressionStore: expressionStore
-               ),
-               !refined.distilleryName.isEmpty {
-                onLabel(refinedLines, photoData)
-            } else {
-                onLabel(liveLines, photoData)
-            }
+            async let photoData = LabelRefinement.jpegData(from: image)
+            let refined = await LabelRefinement.refine(
+                image: image, using: labelOCR,
+                distilleryStore: distilleryStore, expressionStore: expressionStore
+            )
+            onLabel(refined?.lines ?? liveLines, await photoData)
         }
     }
 }

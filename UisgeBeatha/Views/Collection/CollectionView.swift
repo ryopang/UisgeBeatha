@@ -108,6 +108,7 @@ struct CollectionView: View {
                     if let bottle = bottlePendingDelete {
                         if let filename = bottle.userPhotoFilename {
                             try? imageStore.delete(filename: filename)
+                            ThumbnailCache.shared.removeImage(forKey: filename)
                         }
                         modelContext.delete(bottle)
                         persistChanges()
