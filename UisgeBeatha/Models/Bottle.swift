@@ -22,6 +22,15 @@ enum BottleStatus: String, Codable, CaseIterable, Sendable {
     static func next(after status: BottleStatus?) -> BottleStatus {
         status?.next ?? .sealed
     }
+
+    /// The glyph shown next to the status.
+    var symbolName: String {
+        switch self {
+        case .sealed: "lock.fill"
+        case .open: "lock.open.fill"
+        case .finished: "checkmark.circle.fill"
+        }
+    }
 }
 
 /// The current schema's bottle model. Views and services use this name;

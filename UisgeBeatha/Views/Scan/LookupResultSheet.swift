@@ -109,7 +109,7 @@ struct LookupResultSheet: View {
                         Button(Strings.Scan.addToCollection) {
                             showingAddForm = true
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.accentProminent)
                         NavigationLink(Strings.Scan.detailsOnly) {
                             detailsOnlyView
                         }
@@ -165,7 +165,8 @@ struct LookupResultSheet: View {
 
     private var imagePlaceholder: some View {
         Image(systemName: "wineglass")
-            .font(.system(size: 56))
+            .font(.largeTitle)
+            .imageScale(.large)
             .foregroundStyle(.quaternary)
     }
 

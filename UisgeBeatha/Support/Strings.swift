@@ -51,12 +51,12 @@ nonisolated enum Strings {
         static let title = "Label Scan"
         static let retake = "Retake"
         static let notFound = "Not found"
-        static let guessedLabel = "Uncertain — please check"
+        static let guessedLabel = "Uncertain. Please check."
         static let suggestedDistilleries = "Did you mean"
         static let allDistilleries = "All Distilleries"
         static let searchResults = "Results"
         static let searchDistilleries = "Search distilleries"
-        static let confidenceCaption = "Fields marked with a question mark weren't certain — check them before saving."
+        static let confidenceCaption = "Fields marked with a question mark weren't certain. Check them before saving."
     }
 
     enum Policy {
@@ -126,8 +126,8 @@ nonisolated enum Strings {
         static let save = "Save"
         static let cancel = "Cancel"
         static let scanLabel = "Scan the Label"
-        static let labelScanSuccess = "Read from the label — please check the details."
-        static let labelScanUncertain = "Read from the label, but the distillery match isn't certain — please check it."
+        static let labelScanSuccess = "Read from the label. Please check the details."
+        static let labelScanUncertain = "Read from the label, but the distillery match isn't certain. Please check it."
         static let labelScanFailure = "Couldn't read the label. Try a closer, well-lit photo, or enter the details manually."
     }
 

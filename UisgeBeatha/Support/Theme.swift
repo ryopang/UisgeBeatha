@@ -24,6 +24,38 @@ enum Theme {
     enum Weight {
         static let emphasis: Font.Weight = .semibold
     }
+
+    /// Colors the asset catalog can't express because they depend on
+    /// another color rather than on appearance alone.
+    enum Palette {
+        /// Text on a solid accent fill. White on the dark-mode accent
+        /// `#DE8230` is only 2.9:1, so dark mode uses near-black `#1A1206`
+        /// (about 7:1). Light mode keeps white on `#A75A17` (5.1:1).
+        static let onAccent = Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0x1A / 255, green: 0x12 / 255, blue: 0x06 / 255, alpha: 1)
+                : .white
+        })
+
+        /// Fill behind white digits for a map badge with no bottles. A
+        /// muted grey that still gives the digits more than 4.5:1 in both
+        /// appearances; dimming the whole badge with opacity instead would
+        /// drag the text below contrast.
+        static let emptyBadgeFill = Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(white: 0.36, alpha: 1)
+                : UIColor(white: 0.40, alpha: 1)
+        })
+    }
+
+    /// Motion principles (PRD section 8.4): explain a change, stay fast
+    /// (150 to 250 ms), never overshoot, never block input.
+    enum Motion {
+        static let quick = Animation.snappy(duration: 0.2)
+        static let press = Animation.snappy(duration: 0.15)
+        /// Scale while a control is pressed.
+        static let pressedScale: CGFloat = 0.96
+    }
 }
 
 extension View {

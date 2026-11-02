@@ -33,7 +33,7 @@ struct ContainerRecoveryView: View {
                             Text(Strings.Recovery.retry)
                                 .frame(maxWidth: .infinity, minHeight: 44)
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.accentProminent)
 
                         if let storeFileURL {
                             ShareLink(item: storeFileURL) {

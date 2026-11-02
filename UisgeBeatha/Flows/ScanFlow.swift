@@ -128,6 +128,7 @@ final class ScanFlow {
             } else {
                 // Ambiguous data falls through to the result sheet / form,
                 // never a hard reject (PRD F1).
+                Haptics.success()
                 sheet = .result(result, product)
             }
         case .miss:
@@ -173,6 +174,7 @@ final class ScanFlow {
             base, lines: refined?.lines ?? labelReader.lines,
             distilleryStore: distilleryStore, expressionStore: expressionStore
         )
+        Haptics.success()
         sheet = .labelScanResult(enhanced ?? base, photoData: await photoData)
     }
 

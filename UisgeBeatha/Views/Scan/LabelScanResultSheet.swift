@@ -76,7 +76,8 @@ struct LabelScanResultSheet: View {
                             .accessibilityHidden(true)
                     } else {
                         Image(systemName: "text.viewfinder")
-                            .font(.system(size: 44))
+                            .font(.largeTitle)
+                            .imageScale(.large)
                             .foregroundStyle(.secondary)
                             .frame(height: 72)
                             .accessibilityHidden(true)
@@ -99,7 +100,7 @@ struct LabelScanResultSheet: View {
                         Button(Strings.Scan.addToCollection) {
                             showingAddForm = true
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.accentProminent)
                         Button(Strings.ScanResult.retake, role: .cancel) {
                             onRetake()
                         }

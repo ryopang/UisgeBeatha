@@ -4,9 +4,22 @@ import SwiftUI
 /// set; VoiceOver adjusts in half-star increments.
 struct RatingControl: View {
     @Binding var rating: Double?
-    var starSize: CGFloat = 36
     var spacing: CGFloat = 8
 
+    /// Stars grow with Dynamic Type, capped so five of them always fit
+    /// across a phone at accessibility sizes.
+    @ScaledMetric(relativeTo: .title) private var scaledStarSize: CGFloat
+    private let baseStarSize: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(rating: Binding<Double?>, starSize: CGFloat = 36, spacing: CGFloat = 8) {
+        _rating = rating
+        self.spacing = spacing
+        baseStarSize = starSize
+        _scaledStarSize = ScaledMetric(wrappedValue: starSize, relativeTo: .title)
+    }
+
+    private var starSize: CGFloat { min(scaledStarSize, baseStarSize * 1.3) }
     private var totalWidth: CGFloat { starSize * 5 + spacing * 4 }
 
     var body: some View {
@@ -17,6 +30,9 @@ struct RatingControl: View {
                     .foregroundStyle(Color.accentColor)
             }
         }
+        // The stars bounce when the rating is set; under Reduce Motion the
+        // haptic and the changed glyphs are the feedback.
+        .symbolEffect(.bounce, options: .nonRepeating, value: reduceMotion ? nil : rating)
         .contentShape(Rectangle())
         // Tap sets the rating directly. Scrubbing needs a deliberate
         // horizontal drag: the old zero-distance drag claimed every touch

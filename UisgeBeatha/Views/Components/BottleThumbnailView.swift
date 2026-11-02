@@ -8,17 +8,21 @@ import SwiftUI
 /// a miss is decoded off the main actor.
 struct BottleThumbnailView: View {
     let bottle: Bottle
-    var size: CGFloat = 48
+    private let baseSize: CGFloat
+    @ScaledMetric(relativeTo: .body) private var scaledSize: CGFloat
 
     @Environment(\.imageStore) private var imageStore
     @State private var userImage: UIImage?
 
     init(bottle: Bottle, size: CGFloat = 48) {
         self.bottle = bottle
-        self.size = size
+        baseSize = size
+        _scaledSize = ScaledMetric(wrappedValue: size, relativeTo: .body)
         let cached = bottle.userPhotoFilename.flatMap { ThumbnailCache.shared.image(forKey: $0) }
         _userImage = State(initialValue: cached)
     }
+
+    private var size: CGFloat { min(scaledSize, baseSize * 1.75) }
 
     var body: some View {
         content
@@ -47,13 +51,13 @@ struct BottleThumbnailView: View {
             AsyncImage(url: url) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
-                MonogramThumbnail(name: bottle.name, regionID: bottle.region, size: size)
+                MonogramThumbnail(name: bottle.name, regionID: bottle.region, size: baseSize)
             }
             .frame(width: size, height: size)
             .clipShape(RoundedRectangle(cornerRadius: size * 0.24))
             .accessibilityHidden(true)
         } else {
-            MonogramThumbnail(name: bottle.name, regionID: bottle.region, size: size)
+            MonogramThumbnail(name: bottle.name, regionID: bottle.region, size: baseSize)
         }
     }
 }

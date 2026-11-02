@@ -15,6 +15,7 @@ struct BottleDetailView: View {
     @Environment(\.editorRouter) private var editorRouter
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @ScaledMetric(relativeTo: .body) private var heroHeight: CGFloat = 320
 
@@ -354,16 +355,26 @@ struct BottleDetailView: View {
     /// form's picker.
     private var statusCell: some View {
         Button {
-            bottle.status = BottleStatus.next(after: bottle.status)
+            withAnimation(Theme.Motion.quick) {
+                bottle.status = BottleStatus.next(after: bottle.status)
+            }
+            Haptics.selection()
             persistChanges()
         } label: {
             VStack(alignment: .leading, spacing: 2) {
                 Text(Strings.Detail.status)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text(bottle.status.map(Strings.Status.label(for:)) ?? Strings.Detail.statusNotSet)
-                    .font(.body)
-                    .foregroundStyle(bottle.status == nil ? Color.secondary : Color.accentColor)
+                HStack(spacing: 6) {
+                    // Decorative: the text already says the status.
+                    Image(systemName: bottle.status?.symbolName ?? "circle.dashed")
+                        .symbolEffect(.bounce, options: .nonRepeating, value: reduceMotion ? nil : bottle.status)
+                        .accessibilityHidden(true)
+                    Text(bottle.status.map(Strings.Status.label(for:)) ?? Strings.Detail.statusNotSet)
+                        .contentTransition(.opacity)
+                }
+                .font(.body)
+                .foregroundStyle(bottle.status == nil ? Color.secondary : Color.accentColor)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
@@ -378,6 +389,7 @@ struct BottleDetailView: View {
         VStack(spacing: 8) {
             Text(Strings.Detail.ratingSection)
                 .font(.headline)
+                .accessibilityAddTraits(.isHeader)
                 .frame(maxWidth: .infinity, alignment: .leading)
             RatingControl(rating: Binding(
                 get: { bottle.rating },
@@ -396,6 +408,7 @@ struct BottleDetailView: View {
             HStack {
                 Text(Strings.Detail.notesSection)
                     .font(.headline)
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
                 Button(Strings.Detail.newNote, systemImage: "square.and.pencil") {
                     editorRouter?.present(.newNote(bottle))

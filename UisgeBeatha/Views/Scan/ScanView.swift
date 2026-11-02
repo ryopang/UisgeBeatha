@@ -366,7 +366,7 @@ private struct ScanScreen: View {
             Button(Strings.Scan.scanAgain) {
                 flow.dismissRejection()
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.accentProminent)
         }
         .padding(32)
     }
@@ -391,7 +391,7 @@ private struct ScanScreen: View {
                 manualBarcode = ""
                 flow.process(barcode: code)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.accentProminent)
             // Only a plausible GTIN gets sent to the lookup APIs.
             .disabled(Barcode.normalized(manualBarcode) == nil)
             Button(Strings.Scan.enterManually) {
@@ -418,6 +418,7 @@ private struct ScanScreen: View {
 private struct DuplicateBottleSheet: View {
     let bottle: Bottle
     private var dismiss = ContextualDismiss()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingToast = true
 
     var body: some View {
@@ -437,12 +438,12 @@ private struct DuplicateBottleSheet: View {
                 Text(Strings.Scan.duplicateToast)
                     .pillLabel()
                     .padding(.top, 8)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
             }
         }
         .task {
             try? await Task.sleep(for: .seconds(2.5))
-            withAnimation { showingToast = false }
+            withAnimation(Theme.Motion.quick) { showingToast = false }
         }
     }
 }

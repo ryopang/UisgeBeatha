@@ -283,6 +283,7 @@ struct BottleFormView: View {
             }
             do {
                 try modelContext.save()
+                if isNewBottle { Haptics.success() }
                 dismiss()
                 onSaved?()
                 // Only worth searching when the bottle still has no photo at

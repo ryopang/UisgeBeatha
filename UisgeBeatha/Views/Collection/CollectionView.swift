@@ -42,6 +42,7 @@ struct CollectionView: View {
     @SceneStorage("collection.selectedBottle") private var storedSelection = ""
     @SceneStorage("collection.regionFilter") private var regionFilterID = ""
 
+    @Namespace private var zoomNamespace
     @State private var searchText = ""
     @State private var showingAddForm = false
     @State private var bottlePendingDelete: Bottle?
@@ -165,6 +166,7 @@ struct CollectionView: View {
             ForEach(visibleBottles(filteringRegion: false)) { bottle in
                 NavigationLink {
                     BottleDetailView(bottle: bottle)
+                        .modifier(ZoomDestination(id: bottle.id, namespace: zoomNamespace))
                 } label: {
                     BottleRowView(bottle: bottle)
                 }
@@ -172,6 +174,7 @@ struct CollectionView: View {
                 .swipeActions(edge: .trailing) { deleteSwipe(for: bottle) }
             }
         }
+        .environment(\.zoomNamespace, zoomNamespace)
         .searchable(text: $searchText, prompt: Strings.Collection.searchPrompt)
     }
 
@@ -328,7 +331,7 @@ struct CollectionView: View {
             Button(Strings.Collection.emptyAction) {
                 tabRouter?.selection = .scan
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.accentProminent)
             Button(Strings.Collection.emptyManualAction) {
                 showingAddForm = true
             }

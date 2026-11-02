@@ -62,7 +62,6 @@ struct RegionMapView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .background(.thinMaterial, in: Capsule())
-            .shadow(color: .black.opacity(0.15), radius: 2, y: 1)
             .accessibilityElement(children: .combine)
     }
 
@@ -85,7 +84,7 @@ struct RegionMapView: View {
                     .monospacedDigit()
                     .frame(minWidth: 30, minHeight: 30)
                     .background(
-                        count == 0 ? AnyShapeStyle(.gray) : AnyShapeStyle(region.badgeFillColor),
+                        count == 0 ? Theme.Palette.emptyBadgeFill : region.badgeFillColor,
                         in: Circle()
                     )
                     .overlay(Circle().strokeBorder(.white.opacity(0.85), lineWidth: 1.5))
@@ -95,18 +94,18 @@ struct RegionMapView: View {
                             .padding(-4)
                             .opacity(filteredRegionID?.wrappedValue == region.id ? 1 : 0)
                     )
-                    .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
                 Text(region.displayName)
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.primary)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background(.thickMaterial, in: Capsule())
-                    .shadow(color: .black.opacity(0.15), radius: 1, y: 1)
             }
-            .opacity(count == 0 ? 0.7 : 1)
+            // Empty regions read as muted through the fill token alone;
+            // fading the whole badge would pull its text below contrast.
+            .frame(minWidth: 44, minHeight: 44)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressScale)
         .accessibilityLabel(Strings.Map.badgeLabel(region: region.displayName, count: count))
         .accessibilityAddTraits(filteredRegionID?.wrappedValue == region.id ? .isSelected : [])
         .accessibilityIdentifier("region-badge-\(region.id)")

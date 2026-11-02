@@ -5,7 +5,19 @@ import SwiftUI
 struct MonogramThumbnail: View {
     let name: String
     let regionID: String
-    var size: CGFloat = 48
+    private let baseSize: CGFloat
+    /// Grows with Dynamic Type, capped so a list row doesn't turn into a
+    /// poster at the largest accessibility sizes.
+    @ScaledMetric(relativeTo: .body) private var scaledSize: CGFloat
+
+    init(name: String, regionID: String, size: CGFloat = 48) {
+        self.name = name
+        self.regionID = regionID
+        baseSize = size
+        _scaledSize = ScaledMetric(wrappedValue: size, relativeTo: .body)
+    }
+
+    private var size: CGFloat { min(scaledSize, baseSize * 1.75) }
 
     private var initial: String {
         name.trimmingCharacters(in: .whitespaces).first.map(String.init)?.uppercased() ?? "•"
