@@ -89,6 +89,10 @@ Also added since v1.0: automatic + on-demand stock-photo backfill for bottles th
 
 Collection screen: sort, search, and add now only appear in list view — none of them apply to the region map. The List/Map toggle moved into the toolbar (and widened), reclaiming the row it used to occupy so the map gets the full screen. List rows no longer show the sealed/open/finished status pill (still visible, and still changeable by swipe, just not on the row); the region tag moved inline next to the distillery name instead of stranding alone on its own line.
 
+## Next: v2.0
+
+The November 2026 audit kept the architecture and fixed 19 issues (a Wikipedia fallback that never ran, a crash risk in photo backfill, barcode input validation, network timeouts, CSV formula injection, a privacy manifest, WCAG contrast on region colors, and more). Those fixes were written without a compiler, so the first step is building them in Xcode 27. See the audit for the full list and the PRD for the phased plan.
+
 ## Building
 
 Requires Xcode 26 and an iOS 26 simulator or device. No package resolution — there are no dependencies.
@@ -108,7 +112,7 @@ xcodebuild -project UisgeBeatha.xcodeproj -scheme UisgeBeathaUITests \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
 ```
 
-The product requirements document and phase plan live in [`uisge-beatha-prd-build-plan.md`](uisge-beatha-prd-build-plan.md).
+The product requirements document and phase plan live in [`uisge-beatha-prd-build-plan.md`](uisge-beatha-prd-build-plan.md) (v2.0: iPhone + iPhone Duo adaptive layout, CloudKit sync, on-device Foundation Models, App Store release). The November 2026 end-to-end audit behind it is [`docs/audit-2026-11.md`](docs/audit-2026-11.md). The original v1 PRD is archived in [`docs/archive/`](docs/archive/uisge-beatha-prd-v1.md).
 
 ---
 
