@@ -66,6 +66,7 @@ private struct ScanScreen: View {
     @Bindable var flow: ScanFlow
 
     @Environment(\.distilleryStore) private var distilleryStore
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     @AppStorage("scanMode") private var scanModeRawValue = ScanMode.barcode.rawValue
 
@@ -78,34 +79,32 @@ private struct ScanScreen: View {
         ScanMode(rawValue: scanModeRawValue) ?? .barcode
     }
 
+    /// Regular width (the iPhone Duo's inner display): results in a
+    /// trailing panel, camera stays live. Compact: results in sheets.
+    private var usesPanel: Bool {
+        horizontalSizeClass == .regular
+    }
+
+    /// The system sheet is only used at compact width.
+    private var sheetBinding: Binding<ScanFlow.Sheet?> {
+        Binding(
+            get: { usesPanel ? nil : flow.sheet },
+            set: { flow.sheet = $0 }
+        )
+    }
+
     var body: some View {
         NavigationStack {
             Group {
-                switch flow.phase {
-                case .rejected:
-                    rejectionView
-                case .lookingUp:
-                    lookingUpView
-                case .scanning:
-                    if flow.sheet != nil {
-                        // A sheet is covering the whole screen, so nothing
-                        // here is visible, but the branch change still
-                        // matters: it tears the scanner fully out of the
-                        // view tree instead of merely covering it,
-                        // releasing the camera session while the person is
-                        // on the sheet and guaranteeing a genuinely fresh
-                        // scanner, not a resumed one, once the sheet closes.
-                        Color.clear
-                    } else if LiveScannerView.isSupported {
-                        scannerScreen
-                    } else {
-                        manualEntryFallback
-                    }
+                if usesPanel {
+                    panelLayout
+                } else {
+                    stackedContent
                 }
             }
             .navigationTitle(Strings.Scan.title)
             .navigationBarTitleDisplayMode(.inline)
-            .sheet(item: $flow.sheet) { sheet in
+            .sheet(item: sheetBinding) { sheet in
                 sheetContent(sheet)
             }
             // Nothing read in a previous scanner session applies to the
@@ -117,6 +116,76 @@ private struct ScanScreen: View {
                     liveScanner = nil
                 }
             }
+            .onChange(of: usesPanel, initial: true) {
+                flow.showsResultsBesideScanner = usesPanel
+            }
+        }
+    }
+
+    /// Compact: one thing on screen at a time.
+    @ViewBuilder
+    private var stackedContent: some View {
+        switch flow.phase {
+        case .rejected:
+            rejectionView
+        case .lookingUp:
+            lookingUpView
+        case .scanning:
+            if flow.sheet != nil {
+                // A sheet is covering the whole screen, so nothing here is
+                // visible, but the branch change still matters: it tears
+                // the scanner fully out of the view tree instead of merely
+                // covering it, releasing the camera session while the
+                // person is on the sheet and guaranteeing a genuinely
+                // fresh scanner, not a resumed one, once the sheet closes.
+                Color.clear
+            } else {
+                scannerOrFallback
+            }
+        }
+    }
+
+    /// Regular: scanner on the leading side, the current lookup, rejection
+    /// or result on the trailing side. The camera is never torn down, so
+    /// the next bottle can be scanned while the last one's result is still
+    /// open.
+    private var panelLayout: some View {
+        HStack(spacing: 0) {
+            scannerOrFallback
+                .frame(maxWidth: .infinity)
+            if flow.phase != .scanning || flow.sheet != nil {
+                Divider()
+                panelContent
+                    .frame(minWidth: 340, idealWidth: 400, maxWidth: 440)
+                    .background(.background)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var panelContent: some View {
+        switch flow.phase {
+        case .rejected:
+            rejectionView
+        case .lookingUp:
+            lookingUpView
+        case .scanning:
+            if let sheet = flow.sheet {
+                sheetContent(sheet)
+                    .environment(\.panelDismiss, { flow.sheet = nil })
+                    // New content per result, so one result's state never
+                    // leaks into the next.
+                    .id(sheet.id)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var scannerOrFallback: some View {
+        if LiveScannerView.isSupported {
+            scannerScreen
+        } else {
+            manualEntryFallback
         }
     }
 
@@ -343,7 +412,7 @@ private struct ScanScreen: View {
 /// an "already in your collection" toast.
 private struct DuplicateBottleSheet: View {
     let bottle: Bottle
-    @Environment(\.dismiss) private var dismiss
+    private var dismiss = ContextualDismiss()
     @State private var showingToast = true
 
     var body: some View {
@@ -357,6 +426,7 @@ private struct DuplicateBottleSheet: View {
                     }
                 }
         }
+        .editorRouting()
         .overlay(alignment: .top) {
             if showingToast {
                 Text(Strings.Scan.duplicateToast)

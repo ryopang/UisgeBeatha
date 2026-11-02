@@ -79,7 +79,11 @@ nonisolated enum Strings {
 
     enum Collection {
         static let title = "Collection"
-        static let searchPrompt = "Search name or distillery"
+        static let searchPrompt = "Search name, distillery, region or cask"
+        static let selectTitle = "Select a Bottle"
+        static let selectMessage = "Pick a bottle from the list, or scan a new one."
+        static let allRegions = "All Regions"
+        static let regionFilter = "Region"
         static let sort = "Sort"
         static let sortByName = "Name"
         static let sortByDistillery = "Distillery"
@@ -150,6 +154,7 @@ nonisolated enum Strings {
         static let more = "More"
         static let edit = "Edit"
         static let delete = "Delete"
+        static let photoMenu = "Photo"
         static let takePhoto = "Take Photo"
         static let choosePhoto = "Choose Photo"
         static let lookUpPhoto = "Look Up Photo"

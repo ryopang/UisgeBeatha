@@ -32,7 +32,7 @@ struct BottleFormView: View {
     @Environment(\.expressionStore) private var expressionStore
     @Environment(\.imageStore) private var imageStore
     @Environment(\.stockPhotoBackfill) private var stockPhotoBackfill
-    @Environment(\.dismiss) private var dismiss
+    private var dismiss = ContextualDismiss()
 
     /// Read-only: seeds cask type autocomplete from what's already in the
     /// collection.

@@ -22,7 +22,7 @@ struct LabelScanResultSheet: View {
     var onSaved: (() -> Void)?
 
     @Environment(\.distilleryStore) private var distilleryStore
-    @Environment(\.dismiss) private var dismiss
+    private var dismiss = ContextualDismiss()
 
     @State private var distilleryName: String
     @State private var region: String
@@ -124,6 +124,9 @@ struct LabelScanResultSheet: View {
                         dismiss()
                     }
                 )
+                // A sheet presented from inside a panel must close itself,
+                // not the panel.
+                .environment(\.panelDismiss, nil)
             }
             .sheet(isPresented: $showingDistilleryPicker) {
                 DistilleryPickerSheet(

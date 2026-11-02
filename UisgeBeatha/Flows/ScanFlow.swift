@@ -42,6 +42,10 @@ final class ScanFlow {
 
     private(set) var phase: Phase = .scanning
     var sheet: Sheet?
+    /// True in the regular-width layout, where results appear in a trailing
+    /// panel beside the camera rather than over it. The camera then stays
+    /// live (scans are still ignored while a lookup or result is open).
+    var showsResultsBesideScanner = false
     let labelReader: LiveLabelReader
 
     @ObservationIgnored private let lookup: any BarcodeLookupServicing
@@ -83,7 +87,7 @@ final class ScanFlow {
     /// fully down (not merely pausing it) is what makes it come back
     /// reliably.
     var isScannerSuspended: Bool {
-        phase != .scanning || sheet != nil
+        !showsResultsBesideScanner && (phase != .scanning || sheet != nil)
     }
 
     // MARK: - Barcode

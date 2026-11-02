@@ -8,7 +8,7 @@ struct LookupResultSheet: View {
     let product: LookupProduct
     let matchedDistillery: Distillery?
 
-    @Environment(\.dismiss) private var dismiss
+    private var dismiss = ContextualDismiss()
     @State private var showingAddForm = false
 
     /// Neither lookup tier always returns ABV (UPCitemdb never does), and
@@ -99,6 +99,9 @@ struct LookupResultSheet: View {
                     barcodeIsLocked: true,
                     onSaved: { dismiss() }
                 )
+                // A sheet presented from inside a panel must close itself,
+                // not the panel.
+                .environment(\.panelDismiss, nil)
             }
         }
     }
