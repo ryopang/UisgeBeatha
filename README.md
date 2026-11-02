@@ -89,9 +89,20 @@ Also added since v1.0: automatic + on-demand stock-photo backfill for bottles th
 
 Collection screen: sort, search, and add now only appear in list view — none of them apply to the region map. The List/Map toggle moved into the toolbar (and widened), reclaiming the row it used to occupy so the map gets the full screen. List rows no longer show the sealed/open/finished status pill (still visible, and still changeable by swipe, just not on the row); the region tag moved inline next to the distillery name instead of stranding alone on its own line.
 
+## v2.0
+
+The November 2026 audit kept the architecture and fixed 19 issues; PRD v2.0 turns the app into a product. The v2.0 build is on branch `claude/gracious-rubin-cgi79e`:
+
+- **iPhone and iPhone Duo.** Compact width keeps the single-column stack. Regular width (the Duo's inner display) gets a split view, a two-column bottle detail and a scan panel that keeps the camera live. Layout branches only on size classes, and editors live above the switch so folding never loses a draft.
+- **Private iCloud sync.** SwiftData with CloudKit mirroring, versioned schema (`SchemaV1` to `SchemaV2`), photos stored as synced `BottlePhoto` rows, stock photos downloaded once instead of hotlinked, duplicate merging after sync, and a Settings screen that explains the sync state. If CloudKit can't start, the app falls back to a local store on the same data.
+- **On-device intelligence.** Apple's Foundation Models can fill fields that label and listing parsing missed, under strict validation: a confident heuristic always wins, and the model's claim must be printed in the source text. Also tappable flavour wheel words and "Suggest Words" in tasting notes. Without the model, the app behaves as before.
+- **Design system.** Tokens, a motion spec with Reduce Motion variants, and contrast tests (PRD section 8).
+
+The v2.0 code was written without a compiler. See [`docs/v2-handoff.md`](docs/v2-handoff.md) for what to do first on a Mac, and what is still open.
+
 ## Building
 
-Requires Xcode 26 and an iOS 26 simulator or device. No package resolution — there are no dependencies.
+Requires Xcode 27 (iOS 27 SDK; the deployment target is iOS 26.0) and an iOS 26 or later simulator or device. No package resolution — there are no dependencies.
 
 ```bash
 # Build
@@ -108,7 +119,7 @@ xcodebuild -project UisgeBeatha.xcodeproj -scheme UisgeBeathaUITests \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
 ```
 
-The product requirements document and phase plan live in [`uisge-beatha-prd-build-plan.md`](uisge-beatha-prd-build-plan.md).
+The product requirements document and phase plan live in [`uisge-beatha-prd-build-plan.md`](uisge-beatha-prd-build-plan.md) (v2.0: iPhone + iPhone Duo adaptive layout, CloudKit sync, on-device Foundation Models, App Store release). The November 2026 end-to-end audit behind it is [`docs/audit-2026-11.md`](docs/audit-2026-11.md). The original v1 PRD is archived in [`docs/archive/`](docs/archive/uisge-beatha-prd-v1.md).
 
 ---
 

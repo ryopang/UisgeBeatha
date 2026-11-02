@@ -33,6 +33,8 @@ enum ExportService {
         let status: String?
         let rating: Double?
         let stockPhotoURL: String?
+        let stockPhotoAttribution: String?
+        let lastTastedDate: Date?
         let isDistilleryPhoto: Bool
         let userPhotoFilename: String?
         let dateAdded: Date
@@ -57,12 +59,14 @@ enum ExportService {
             abv: bottle.abv,
             ageStatement: bottle.ageStatement,
             caskType: bottle.caskType,
-            purchasePrice: bottle.purchasePrice,
+            purchasePrice: bottle.price,
             currencyCode: bottle.currencyCode,
             purchaseDate: bottle.purchaseDate,
             status: bottle.status?.rawValue,
             rating: bottle.rating,
             stockPhotoURL: bottle.stockPhotoURL,
+            stockPhotoAttribution: bottle.stockPhotoAttribution,
+            lastTastedDate: bottle.lastTastedDate,
             isDistilleryPhoto: bottle.isDistilleryPhoto,
             userPhotoFilename: bottle.userPhotoFilename,
             dateAdded: bottle.dateAdded,
@@ -106,7 +110,7 @@ enum ExportService {
             fields.append(bottle.abv.map { "\($0)" } ?? "")
             fields.append(bottle.ageStatement.map { "\($0)" } ?? "")
             fields.append(bottle.caskType ?? "")
-            fields.append(bottle.purchasePrice.map { "\($0)" } ?? "")
+            fields.append(bottle.price.map { "\($0)" } ?? "")
             fields.append(bottle.currencyCode)
             fields.append(bottle.purchaseDate.map { $0.formatted(dateFormat) } ?? "")
             fields.append(bottle.status?.rawValue ?? "")
@@ -118,7 +122,16 @@ enum ExportService {
         return lines.joined(separator: "\r\n") + "\r\n"
     }
 
-    static func escapeCSVField(_ field: String) -> String {
+    /// Leading characters that make Numbers, Excel and Sheets evaluate a
+    /// cell as a formula. Names and notes come from OCR and third-party
+    /// product databases, so a value like `=HYPERLINK(...)` must stay text.
+    private static let formulaTriggers: Set<Character> = ["=", "+", "-", "@", "\t", "\r"]
+
+    static func escapeCSVField(_ rawField: String) -> String {
+        var field = rawField
+        if let first = field.first, formulaTriggers.contains(first) {
+            field = "'" + field
+        }
         if field.contains(",") || field.contains("\"") || field.contains("\n") || field.contains("\r") {
             return "\"" + field.replacingOccurrences(of: "\"", with: "\"\"") + "\""
         }

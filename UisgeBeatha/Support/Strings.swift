@@ -9,6 +9,10 @@ nonisolated enum Strings {
         static let name = "Uisge Beatha"
     }
 
+    enum Common {
+        static let done = "Done"
+    }
+
     enum Tabs {
         static let collection = "Collection"
         static let scan = "Scan"
@@ -18,6 +22,7 @@ nonisolated enum Strings {
     enum Scan {
         static let title = "Scan"
         static let lookingUp = "Looking up…"
+        static let cancelLookup = "Cancel"
         static let scanAgain = "Scan Again"
         static let cameraUnavailable = "Scanning needs a camera. Enter the barcode digits instead."
         static let barcodeField = "Barcode"
@@ -46,12 +51,12 @@ nonisolated enum Strings {
         static let title = "Label Scan"
         static let retake = "Retake"
         static let notFound = "Not found"
-        static let guessedLabel = "Uncertain — please check"
+        static let guessedLabel = "Uncertain. Please check."
         static let suggestedDistilleries = "Did you mean"
         static let allDistilleries = "All Distilleries"
         static let searchResults = "Results"
         static let searchDistilleries = "Search distilleries"
-        static let confidenceCaption = "Fields marked with a question mark weren't certain — check them before saving."
+        static let confidenceCaption = "Fields marked with a question mark weren't certain. Check them before saving."
     }
 
     enum Policy {
@@ -74,11 +79,16 @@ nonisolated enum Strings {
 
     enum Collection {
         static let title = "Collection"
-        static let searchPrompt = "Search name or distillery"
+        static let searchPrompt = "Search name, distillery, region or cask"
+        static let selectTitle = "Select a Bottle"
+        static let selectMessage = "Pick a bottle from the list, or scan a new one."
+        static let allRegions = "All Regions"
+        static let regionFilter = "Region"
         static let sort = "Sort"
         static let sortByName = "Name"
         static let sortByDistillery = "Distillery"
         static let sortByRegion = "Region"
+        static let sortByLastTasted = "Last Tasted"
         static let addBottle = "Add Bottle"
         static let emptyTitle = "An Empty Shelf"
         static let emptyMessage = "Your collection starts with a single bottle."
@@ -117,8 +127,8 @@ nonisolated enum Strings {
         static let save = "Save"
         static let cancel = "Cancel"
         static let scanLabel = "Scan the Label"
-        static let labelScanSuccess = "Read from the label — please check the details."
-        static let labelScanUncertain = "Read from the label, but the distillery match isn't certain — please check it."
+        static let labelScanSuccess = "Read from the label. Please check the details."
+        static let labelScanUncertain = "Read from the label, but the distillery match isn't certain. Please check it."
         static let labelScanFailure = "Couldn't read the label. Try a closer, well-lit photo, or enter the details manually."
     }
 
@@ -145,12 +155,19 @@ nonisolated enum Strings {
         static let more = "More"
         static let edit = "Edit"
         static let delete = "Delete"
+        static let photoMenu = "Photo"
         static let takePhoto = "Take Photo"
         static let choosePhoto = "Choose Photo"
         static let lookUpPhoto = "Look Up Photo"
         static let removePhoto = "Remove Photo"
         static let lookUpPhotoFailure = "Couldn't look up a photo right now. Try again in a bit."
         static let distilleryPhotoCaption = "Distillery photo"
+        static let photoViaCommons = "Photo via Wikimedia Commons"
+        static let photoViaOpenFoodFacts = "Photo via Open Food Facts"
+
+        static func photoVia(_ host: String) -> String {
+            "Photo via \(host)"
+        }
         static let distillery = "Distillery"
         static let region = "Region"
         static let abv = "ABV"
@@ -183,11 +200,17 @@ nonisolated enum Strings {
         static let finish = "Finish"
         static let conclusion = "Conclusion"
         static let wheelButton = "Flavour Wheel"
+        static let suggestWords = "Suggest Words"
+        static let suggestNone = "Nothing to suggest yet. Write a little more."
     }
 
     enum Wheel {
         static let title = "Flavour Wheel"
         static let done = "Done"
+        static let layout = "Layout"
+        static let wheelMode = "Wheel"
+        static let listMode = "List"
+        static let tapHint = "Tap a word to add it to your note."
         static let caption = "A reference for finding the words: categories on the inner ring, descriptors on the outer."
         static let accessibilitySummary = "Whisky flavour wheel with eight categories: Smoky, Fruity, Floral, Malty, Woody, Spicy, Sweet, and Maritime."
 
@@ -220,13 +243,59 @@ nonisolated enum Strings {
         static let title = "Settings"
         static let aboutSection = "About"
         static let version = "Version"
-        static let dataNotice = "Your collection stays on this device. Nothing is uploaded anywhere."
+        static let dataNotice = "Your collection lives on this device. When you're signed in to iCloud it also syncs privately through your own iCloud account."
+        static let syncSection = "iCloud Sync"
+        static let syncStatus = "Status"
+        static let privacySection = "Privacy"
+        static let privacyNetwork = "To find a bottle, its photo and its distillery, the barcode or search words are sent to Open Food Facts, UPCitemdb and Wikimedia. No account or personal identifier goes with them."
+        static let privacyICloud = "Your collection, notes and photos sync through your private iCloud database. They are never shared, and nobody else, including the developer, can see them."
+
+        static func syncTitle(_ status: SyncStatus) -> String {
+            switch status {
+            case .checking: "Checking…"
+            case .on: "On"
+            case .off: "Off"
+            case .accountUnavailable: "Unavailable"
+            }
+        }
+
+        static func syncExplanation(_ status: SyncStatus) -> String {
+            switch status {
+            case .checking:
+                "Checking your iCloud account."
+            case .on:
+                "Your collection syncs privately across your devices through your iCloud account."
+            case .off(.disabled):
+                "Sync is turned off for this session. Your collection stays on this device."
+            case .off(.cloudKitUnavailable):
+                "Sync isn't available in this build. Your collection is safe on this device."
+            case .accountUnavailable(.signedOut):
+                "Sign in to iCloud in the Settings app to sync your collection. Everything works on this device in the meantime."
+            case .accountUnavailable(.restricted):
+                "iCloud is restricted on this device, so your collection stays here."
+            case .accountUnavailable(.temporarilyUnavailable):
+                "iCloud is temporarily unavailable. Your collection will sync when it returns."
+            case .accountUnavailable(.unknown):
+                "Couldn't reach your iCloud account. Your collection is safe on this device and will sync when it can."
+            }
+        }
         static let exportSection = "Export"
         static let exportJSON = "Export Collection as JSON"
         static let exportCSV = "Export Collection as CSV"
         static let exportPhotosNote = "Photos are not included in exports."
         static let debugSection = "Debug"
         static let lastLookupSource = "Last Lookup Source"
+    }
+
+    enum Recovery {
+        static let heading = "Your collection couldn't be opened"
+        static let explanation = "Nothing has been deleted. Try again first. If it keeps failing, save a copy of your data before resetting, so it can be recovered later."
+        static let retry = "Try Again"
+        static let saveCopy = "Save a Copy of My Data"
+        static let reset = "Reset and Start Fresh"
+        static let resetConfirmTitle = "Start with an empty collection?"
+        static let resetConfirmMessage = "This deletes the collection stored on this device. A copy you saved stays safe."
+        static let resetConfirmAction = "Delete and Start Fresh"
     }
 
     enum Accessibility {

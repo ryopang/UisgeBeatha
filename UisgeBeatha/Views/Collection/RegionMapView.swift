@@ -7,6 +7,10 @@ import SwiftUI
 /// no polygon overlays in v1.
 struct RegionMapView: View {
     let bottles: [Bottle]
+    /// When set (the regular-width split layout, where a sidebar list sits
+    /// beside the map) tapping a badge filters that list instead of
+    /// presenting a sheet, and tapping the same badge again clears it.
+    var filteredRegionID: Binding<String>?
 
     @State private var selectedRegion: WhiskyRegion?
 
@@ -58,13 +62,20 @@ struct RegionMapView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .background(.thinMaterial, in: Capsule())
-            .shadow(color: .black.opacity(0.15), radius: 2, y: 1)
             .accessibilityElement(children: .combine)
+    }
+
+    private func select(_ region: WhiskyRegion) {
+        if let filteredRegionID {
+            filteredRegionID.wrappedValue = filteredRegionID.wrappedValue == region.id ? "" : region.id
+        } else {
+            selectedRegion = region
+        }
     }
 
     private func badge(for region: WhiskyRegion, count: Int) -> some View {
         Button {
-            selectedRegion = region
+            select(region)
         } label: {
             VStack(spacing: 3) {
                 Text("\(count)")
@@ -73,23 +84,30 @@ struct RegionMapView: View {
                     .monospacedDigit()
                     .frame(minWidth: 30, minHeight: 30)
                     .background(
-                        count == 0 ? AnyShapeStyle(.gray) : AnyShapeStyle(region.accentColor),
+                        count == 0 ? Theme.Palette.emptyBadgeFill : region.badgeFillColor,
                         in: Circle()
                     )
                     .overlay(Circle().strokeBorder(.white.opacity(0.85), lineWidth: 1.5))
-                    .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
+                    .overlay(
+                        Circle()
+                            .strokeBorder(Color.accentColor, lineWidth: 3)
+                            .padding(-4)
+                            .opacity(filteredRegionID?.wrappedValue == region.id ? 1 : 0)
+                    )
                 Text(region.displayName)
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.primary)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background(.thickMaterial, in: Capsule())
-                    .shadow(color: .black.opacity(0.15), radius: 1, y: 1)
             }
-            .opacity(count == 0 ? 0.7 : 1)
+            // Empty regions read as muted through the fill token alone;
+            // fading the whole badge would pull its text below contrast.
+            .frame(minWidth: 44, minHeight: 44)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressScale)
         .accessibilityLabel(Strings.Map.badgeLabel(region: region.displayName, count: count))
+        .accessibilityAddTraits(filteredRegionID?.wrappedValue == region.id ? .isSelected : [])
         .accessibilityIdentifier("region-badge-\(region.id)")
     }
 }
@@ -129,5 +147,8 @@ private struct RegionBottlesSheet: View {
                 }
             }
         }
+        // A sheet can't present another sheet from a view beneath it, so
+        // editors opened from a detail pushed in here need their own router.
+        .editorRouting()
     }
 }

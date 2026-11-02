@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Display-only half-step star rating (the adjustable control arrives with
-/// the bottle detail in Phase 3).
+/// Display-only half-step star rating. The adjustable version is
+/// `RatingControl`.
 struct RatingStarsView: View {
     let rating: Double
 

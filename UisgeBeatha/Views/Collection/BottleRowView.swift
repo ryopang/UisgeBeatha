@@ -17,6 +17,7 @@ struct BottleRowView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             BottleThumbnailView(bottle: bottle)
+                .modifier(ZoomSource(id: bottle.id))
             VStack(alignment: .leading, spacing: 4) {
                 Text(bottle.name)
                     .font(.headline)

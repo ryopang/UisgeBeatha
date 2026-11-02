@@ -26,7 +26,7 @@ nonisolated struct Expression: Codable, Sendable, Equatable {
 /// a real bottle may be a cask-strength or travel-retail variant this
 /// catalog doesn't know about, and trusting a live read over a guessed
 /// catalog match is the safer default.
-struct ExpressionStore: Sendable {
+nonisolated struct ExpressionStore: Sendable {
     enum LoadError: Error {
         case resourceMissing
     }
@@ -103,7 +103,7 @@ struct ExpressionStore: Sendable {
     }
 }
 
-extension Expression {
+nonisolated extension Expression {
     /// A display name combining distillery, expression name and age, in the
     /// order a bottle's own labeling would read — e.g. "Macallan Double
     /// Cask 12" or "Ardbeg Uigeadail".

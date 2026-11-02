@@ -11,6 +11,8 @@ final class CollectionFlowUITests: XCTestCase {
 
     func testAddSearchCycleDeleteAndPersistence() throws {
         let app = XCUIApplication()
+        // The simulator has no iCloud account; keep the store local.
+        app.launchArguments += ["-disableCloudSync"]
         app.launch()
 
         // Empty state on fresh install: scan is primary, manual add secondary.

@@ -83,7 +83,7 @@ protocol BarcodeImageSearching: Sendable {
 /// text-based when the bottle has one.
 struct OpenFoodFactsBarcodeImageTier: BarcodeImageSearching {
     let tierName = "Open Food Facts (barcode)"
-    var session: URLSession = .shared
+    var session: URLSession = AppNetwork.session
 
     private static let logger = Logger(subsystem: "com.ryo.UisgeBeatha", category: "ImageSearch")
 
@@ -92,7 +92,7 @@ struct OpenFoodFactsBarcodeImageTier: BarcodeImageSearching {
             string: "https://world.openfoodfacts.org/api/v2/product/\(barcode).json?fields=image_url"
         ) else { return nil }
         var request = URLRequest(url: url)
-        request.setValue("UisgeBeatha/1.0 (personal iOS app)", forHTTPHeaderField: "User-Agent")
+        request.setValue(AppNetwork.userAgent, forHTTPHeaderField: "User-Agent")
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
@@ -127,7 +127,7 @@ struct OpenFoodFactsBarcodeImageTier: BarcodeImageSearching {
 /// at a time.
 struct WikimediaCommonsImageTier: ImageSearchTier {
     let tierName = "Wikimedia Commons"
-    var session: URLSession = .shared
+    var session: URLSession = AppNetwork.session
     var maxAttempts = 2
     var retryDelay: Duration = .milliseconds(400)
 
@@ -157,13 +157,17 @@ struct WikimediaCommonsImageTier: ImageSearchTier {
             URLQueryItem(name: "gsrlimit", value: "8"),
             URLQueryItem(name: "prop", value: "imageinfo"),
             URLQueryItem(name: "iiprop", value: "url|mime"),
+            // Ask for a server-rendered thumbnail. The plain `url` is the
+            // original upload, often a multi-megabyte camera file, which
+            // the list then decoded into a 48pt thumbnail on every scroll.
+            URLQueryItem(name: "iiurlwidth", value: "800"),
             URLQueryItem(name: "format", value: "json"),
         ]
         guard let url = components?.url else {
             return nil
         }
         var request = URLRequest(url: url)
-        request.setValue("UisgeBeatha/1.0 (personal iOS app)", forHTTPHeaderField: "User-Agent")
+        request.setValue(AppNetwork.userAgent, forHTTPHeaderField: "User-Agent")
 
         var lastError: Error = URLError(.unknown)
         for attempt in 1...maxAttempts {
@@ -194,6 +198,7 @@ struct WikimediaCommonsImageTier: ImageSearchTier {
             }
             struct ImageInfo: Decodable {
                 let url: String?
+                let thumburl: String?
                 let mime: String?
             }
             let query: Query?
@@ -206,8 +211,13 @@ struct WikimediaCommonsImageTier: ImageSearchTier {
             .sorted { ($0.index ?? .max) < ($1.index ?? .max) }
             .lazy
             .compactMap { $0.imageinfo?.first }
-            .first { ($0.mime ?? "").hasPrefix("image/") }?
-            .url
+            .first { ($0.mime ?? "").hasPrefix("image/") && !($0.url ?? "").isEmpty }
+            .flatMap { info -> String? in
+                // Prefer the sized thumbnail; fall back to the original
+                // when the API didn't render one.
+                if let thumb = info.thumburl, !thumb.isEmpty { return thumb }
+                return info.url
+            }
         guard let imageURL, !imageURL.isEmpty else {
             return nil
         }
@@ -224,7 +234,7 @@ struct WikimediaCommonsImageTier: ImageSearchTier {
 /// in this cascade runs ahead of it.
 struct OpenFoodFactsImageTier: ImageSearchTier {
     let tierName = "Open Food Facts"
-    var session: URLSession = .shared
+    var session: URLSession = AppNetwork.session
     var maxAttempts = 3
     var retryDelay: Duration = .milliseconds(600)
 
@@ -248,7 +258,7 @@ struct OpenFoodFactsImageTier: ImageSearchTier {
             return nil
         }
         var request = URLRequest(url: url)
-        request.setValue("UisgeBeatha/1.0 (personal iOS app)", forHTTPHeaderField: "User-Agent")
+        request.setValue(AppNetwork.userAgent, forHTTPHeaderField: "User-Agent")
 
         var lastError: Error = URLError(.unknown)
         for attempt in 1...maxAttempts {
@@ -314,12 +324,11 @@ struct CascadeImageSearchService: ProductImageSearching {
         barcodeImageTier: any BarcodeImageSearching = OpenFoodFactsBarcodeImageTier(),
         wikipedia: any WikipediaServicing = WikipediaService(),
         tiers: [any ImageSearchTier] = [WikimediaCommonsImageTier(), OpenFoodFactsImageTier()],
-        // "V3": the cascade now tries barcode and distillery-Wikipedia
-        // sources ahead of the old tier order, and results are tagged
-        // isDistilleryPhoto — anything cached under an older name may be
-        // stale or shaped differently. Bumping the folder name gives
+        // "V4": Commons hits are now sized thumbnails rather than
+        // full-resolution originals (V3 added barcode/Wikipedia tiers and
+        // the isDistilleryPhoto tag). Bumping the folder name gives
         // everyone a clean slate instead of waiting out the old expiry.
-        cache: DiskCache<ImageSearchOutcome> = DiskCache(folderName: "ImageSearchCacheV3", maxAge: 90 * 24 * 3600)
+        cache: DiskCache<ImageSearchOutcome> = DiskCache(folderName: "ImageSearchCacheV4", maxAge: 90 * 24 * 3600)
     ) {
         self.barcodeImageTier = barcodeImageTier
         self.wikipedia = wikipedia
@@ -491,9 +500,17 @@ final class StockPhotoBackfill {
             defer { inFlightBottleIDs.remove(id) }
             switch await search.findImage(request: request, bypassCache: bypassCache) {
             case .found(let url, let isDistilleryPhoto):
+                // The search can take seconds; the bottle may have been
+                // deleted meanwhile, and writing to a deleted model is a
+                // SwiftData crash.
+                guard !bottle.isDeleted, bottle.modelContext != nil else { return }
                 bottle.stockPhotoURL = url
                 bottle.isDistilleryPhoto = isDistilleryPhoto
                 try? modelContext.save()
+                // Download it once and keep it, rather than hotlinking the
+                // URL on every view. If the download fails the URL stays
+                // remembered and the store maintenance retries later.
+                await StockPhotoImporter().importPhoto(from: url, for: bottle, in: modelContext)
             case .notFound:
                 break
             case .unavailable:

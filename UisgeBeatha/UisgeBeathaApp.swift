@@ -9,29 +9,30 @@ import SwiftUI
 
 @main
 struct UisgeBeathaApp: App {
-    let modelContainer: ModelContainer
+    /// Opening the store can fail (corruption, a failed migration). The
+    /// app shows a recovery screen rather than crashing on every launch.
+    enum ContainerState {
+        case ready(ModelContainer, CloudSyncMonitor)
+        case failed(String)
+    }
+
+    @State private var containerState: ContainerState
     let distilleryStore: DistilleryStore
     let expressionStore: ExpressionStore
     let stockPhotoBackfill: StockPhotoBackfill
 
+    private static let logger = Logger(subsystem: "com.ryo.UisgeBeatha", category: "App")
+
     init() {
-        do {
-            // Local-only in v1. The schema follows the CloudKit-forward rules
-            // in the PRD, so enabling mirroring later is a configuration
-            // change, not a migration.
-            modelContainer = try ModelContainer(for: Bottle.self, TastingNote.self)
-        } catch {
-            // Without a store the app cannot function at all.
-            fatalError("Failed to create ModelContainer: \(error)")
-        }
+        AppNetwork.configureSharedImageCache()
+        _containerState = State(initialValue: Self.openContainer())
 
         do {
             distilleryStore = try DistilleryStore.loadBundled()
         } catch {
             // Autocomplete and region auto-fill degrade quietly; manual entry
             // still works with an empty store.
-            Logger(subsystem: "com.ryo.UisgeBeatha", category: "App")
-                .error("Failed to load distillery seed data: \(error)")
+            Self.logger.error("Failed to load distillery seed data: \(error)")
             distilleryStore = DistilleryStore(distilleries: [])
         }
 
@@ -40,8 +41,7 @@ struct UisgeBeathaApp: App {
         } catch {
             // Label-scan name/age/ABV resolution degrades to OCR-only
             // reads; nothing else depends on this catalog.
-            Logger(subsystem: "com.ryo.UisgeBeatha", category: "App")
-                .error("Failed to load expression catalog: \(error)")
+            Self.logger.error("Failed to load expression catalog: \(error)")
             expressionStore = ExpressionStore(expressions: [])
         }
 
@@ -50,15 +50,43 @@ struct UisgeBeathaApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootTabView()
-                .environment(\.distilleryStore, distilleryStore)
-                .environment(\.expressionStore, expressionStore)
-                .environment(\.barcodeLookup, Self.lookupService())
-                .environment(\.wikipedia, Self.wikipediaService())
-                .environment(\.labelOCR, Self.labelOCRService(distilleryStore: distilleryStore, expressionStore: expressionStore))
-                .environment(\.stockPhotoBackfill, stockPhotoBackfill)
+            switch containerState {
+            case .ready(let container, let syncMonitor):
+                RootTabView()
+                    .environment(\.syncMonitor, syncMonitor)
+                    .environment(\.distilleryStore, distilleryStore)
+                    .environment(\.expressionStore, expressionStore)
+                    .environment(\.barcodeLookup, Self.lookupService())
+                    .environment(\.wikipedia, Self.wikipediaService())
+                    .environment(\.labelOCR, Self.labelOCRService(distilleryStore: distilleryStore, expressionStore: expressionStore))
+                    .environment(\.stockPhotoBackfill, stockPhotoBackfill)
+                    .modelContainer(container)
+                    .task { await syncMonitor.run() }
+            case .failed(let message):
+                ContainerRecoveryView(
+                    errorDescription: message,
+                    onRetry: { containerState = Self.openContainer() },
+                    onReset: {
+                        do {
+                            try AppContainer.resetStore()
+                        } catch {
+                            Self.logger.error("Failed to reset store: \(error)")
+                        }
+                        containerState = Self.openContainer()
+                    }
+                )
+            }
         }
-        .modelContainer(modelContainer)
+    }
+
+    private static func openContainer() -> ContainerState {
+        do {
+            let opened = try AppContainer.open()
+            return .ready(opened.container, CloudSyncMonitor(mode: opened.mode))
+        } catch {
+            logger.error("Failed to create ModelContainer: \(error)")
+            return .failed(String(describing: error))
+        }
     }
 
     private static func lookupService() -> any BarcodeLookupServicing {

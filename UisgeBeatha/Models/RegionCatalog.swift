@@ -15,8 +15,39 @@ struct WhiskyRegion: Identifiable, Hashable, Sendable {
     let longitude: Double
     let blurb: String
 
+    /// The region's base hue, for fills and tints (the 16% capsule behind
+    /// a tag, the monogram tile). Not for text: measured against its own
+    /// tint on a light background, every region fell short of WCAG AA,
+    /// Speyside badly (about 2:1).
     var accentColor: Color {
         Color(red: colorRed, green: colorGreen, blue: colorBlue)
+    }
+
+    /// Text and glyphs drawn in the region color over its own tint:
+    /// darkened 40% in light mode and lightened 25% in dark mode, which
+    /// puts all six regions at 4.8:1 or better (WCAG AA) in both. Plain
+    /// values are captured so the dynamic provider touches no
+    /// actor-isolated state.
+    var textColor: Color {
+        let (red, green, blue) = (colorRed, colorGreen, colorBlue)
+        return Color(uiColor: UIColor { traits in
+            if traits.userInterfaceStyle == .dark {
+                return UIColor(
+                    red: red + (1 - red) * 0.25,
+                    green: green + (1 - green) * 0.25,
+                    blue: blue + (1 - blue) * 0.25,
+                    alpha: 1
+                )
+            }
+            return UIColor(red: red * 0.6, green: green * 0.6, blue: blue * 0.6, alpha: 1)
+        })
+    }
+
+    /// A solid fill behind white text (the map's count badges). Darkened in
+    /// both modes so white digits stay at 6:1 or better; the base hue
+    /// left Speyside at 2.5:1.
+    var badgeFillColor: Color {
+        Color(red: colorRed * 0.6, green: colorGreen * 0.6, blue: colorBlue * 0.6)
     }
 }
 

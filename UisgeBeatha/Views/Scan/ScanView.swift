@@ -2,15 +2,10 @@ import SwiftData
 import SwiftUI
 import VisionKit
 
-/// The scan tab (PRD F1): live scanner on device, manual barcode entry
-/// where no camera exists (simulator, camera permission denied). Owns the
-/// post-capture flow: duplicate check → lookup → gate → result/miss.
-///
-/// The camera runs exactly one recognizer at a time, chosen by an
-/// always-visible Barcode/Label switch. An earlier version detected both
-/// at once, which meant there was no way to tell what the camera was doing
-/// at any given moment — and after a failed barcode attempt, no obvious
-/// way back to barcode scanning. One mode, always named on screen.
+/// The scan tab (PRD F1). Builds the `ScanFlow` from the environment's
+/// services once, then hands it to `ScanScreen`. The flow outlives view
+/// rebuilds, so a size-class change (folding the iPhone Duo) never drops a
+/// lookup in progress or an open result.
 struct ScanView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.barcodeLookup) private var barcodeLookup
@@ -18,17 +13,66 @@ struct ScanView: View {
     @Environment(\.distilleryStore) private var distilleryStore
     @Environment(\.expressionStore) private var expressionStore
     @Environment(\.labelOCR) private var labelOCR
+    @Environment(\.bottleExtractor) private var bottleExtractor
+
+    @State private var flow: ScanFlow?
+
+    var body: some View {
+        Group {
+            if let flow {
+                ScanScreen(flow: flow)
+            } else {
+                Color.clear
+            }
+        }
+        .task {
+            if flow == nil { flow = makeFlow() }
+        }
+    }
+
+    private func makeFlow() -> ScanFlow {
+        let context = modelContext
+        return ScanFlow(
+            lookup: barcodeLookup,
+            policy: collectionPolicy,
+            labelOCR: labelOCR,
+            extractor: bottleExtractor,
+            distilleryStore: distilleryStore,
+            expressionStore: expressionStore,
+            findExistingBottle: { barcode in Self.existingBottle(barcode: barcode, in: context) }
+        )
+    }
+
+    static func existingBottle(barcode: String, in context: ModelContext) -> Bottle? {
+        // Bottles saved before normalization may hold the 12-digit UPC-A
+        // form of the same code.
+        let variants = Barcode.storedVariants(of: barcode)
+        let canonical = variants[0]
+        let legacy = variants.last ?? canonical
+        let descriptor = FetchDescriptor<Bottle>(
+            predicate: #Predicate { $0.barcode == canonical || $0.barcode == legacy }
+        )
+        return (try? context.fetch(descriptor))?.first
+    }
+}
+
+/// The scan screen itself: live scanner on device, manual barcode entry
+/// where no camera exists (simulator, camera permission denied).
+///
+/// The camera runs exactly one recognizer at a time, chosen by an
+/// always-visible Barcode/Label switch. An earlier version detected both
+/// at once, which meant there was no way to tell what the camera was doing
+/// at any given moment, and after a failed barcode attempt, no obvious
+/// way back to barcode scanning. One mode, always named on screen.
+private struct ScanScreen: View {
+    @Bindable var flow: ScanFlow
+
+    @Environment(\.distilleryStore) private var distilleryStore
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     @AppStorage("scanMode") private var scanModeRawValue = ScanMode.barcode.rawValue
 
-    @State private var activeSheet: ScanSheet?
-    @State private var isLookingUp = false
-    @State private var showingRejection = false
     @State private var manualBarcode = ""
-    /// Accumulated live text from the scanner session. Cleared whenever the
-    /// scanner is torn down (mode switch, sheet opening, retake) so a stale
-    /// reading never survives into a new session.
-    @State private var recognizedTextLines: [String] = []
     /// Held only to grab a still frame when a label read is accepted, so
     /// live label scanning still saves the bottle's photo.
     @State private var liveScanner: DataScannerViewController?
@@ -37,84 +81,147 @@ struct ScanView: View {
         ScanMode(rawValue: scanModeRawValue) ?? .barcode
     }
 
-    enum ScanSheet: Identifiable {
-        case result(LookupResult, LookupProduct)
-        case manualEntry(barcode: String)
-        case duplicate(Bottle)
-        case labelScanResult(LabelScanResult, photoData: Data?)
-        /// Plain "I'll enter it myself" escape hatch — no barcode, no
-        /// notice, nothing pre-filled. Distinct from `.manualEntry`, which
-        /// implies a lookup was actually attempted and missed.
-        case manualForm
+    /// Regular width (the iPhone Duo's inner display): results in a
+    /// trailing panel, camera stays live. Compact: results in sheets.
+    private var usesPanel: Bool {
+        horizontalSizeClass == .regular
+    }
 
-        var id: String {
-            switch self {
-            case .result(let result, _): "result-\(result.barcode)"
-            case .manualEntry(let barcode): "manual-\(barcode)"
-            case .duplicate(let bottle): "duplicate-\(bottle.id)"
-            case .labelScanResult: "label-scan-result"
-            case .manualForm: "manual-form"
-            }
-        }
+    /// The system sheet is only used at compact width.
+    private var sheetBinding: Binding<ScanFlow.Sheet?> {
+        Binding(
+            get: { usesPanel ? nil : flow.sheet },
+            set: { flow.sheet = $0 }
+        )
     }
 
     var body: some View {
         NavigationStack {
             Group {
-                if showingRejection {
-                    rejectionView
-                } else if isLookingUp {
-                    lookingUpView
-                } else if activeSheet != nil {
-                    // A sheet is covering the whole screen, so nothing here
-                    // is visible — but the branch change still matters: it
-                    // tears the scanner fully out of the view tree instead
-                    // of merely covering it, releasing the camera session
-                    // while the user is on the sheet (a live capture session
-                    // sitting behind a Form was causing UI hitches) and
-                    // guaranteeing a genuinely fresh scanner, not a resumed
-                    // one, once the sheet closes.
-                    Color.clear
-                } else if LiveScannerView.isSupported {
-                    scannerScreen
+                if usesPanel {
+                    panelLayout
                 } else {
-                    manualEntryFallback
+                    stackedContent
                 }
             }
             .navigationTitle(Strings.Scan.title)
             .navigationBarTitleDisplayMode(.inline)
-            .sheet(item: $activeSheet) { sheet in
-                switch sheet {
-                case .result(let result, let product):
-                    LookupResultSheet(
-                        barcode: result.barcode,
-                        product: product,
-                        matchedDistillery: matchDistillery(for: product)
-                    )
-                case .manualEntry(let barcode):
-                    BottleFormView(
-                        bottle: nil,
-                        prefill: LookupPrefill(barcode: barcode),
-                        barcodeIsLocked: true,
-                        notice: Strings.Scan.missNotice,
-                        offersLabelScan: true
-                    )
-                case .duplicate(let bottle):
-                    DuplicateBottleSheet(bottle: bottle)
-                case .labelScanResult(let result, let photoData):
-                    LabelScanResultSheet(
-                        result: result,
-                        capturedPhotoData: photoData,
-                        onRetake: {
-                            recognizedTextLines = []
-                            activeSheet = nil
-                        },
-                        onSaved: { activeSheet = nil }
-                    )
-                case .manualForm:
-                    BottleFormView(bottle: nil, offersLabelScan: true)
+            .sheet(item: sheetBinding) { sheet in
+                sheetContent(sheet)
+            }
+            // Nothing read in a previous scanner session applies to the
+            // next one: a stale "Use This Label" must never survive a sheet
+            // opening or a mode switch.
+            .onChange(of: flow.isScannerSuspended) { _, suspended in
+                if suspended {
+                    flow.resetLiveReading()
+                    liveScanner = nil
                 }
             }
+            .onChange(of: usesPanel, initial: true) {
+                flow.showsResultsBesideScanner = usesPanel
+            }
+            .onChange(of: scanMode, initial: true) {
+                if scanMode == .label { flow.prewarmExtractor() }
+            }
+        }
+    }
+
+    /// Compact: one thing on screen at a time.
+    @ViewBuilder
+    private var stackedContent: some View {
+        switch flow.phase {
+        case .rejected:
+            rejectionView
+        case .lookingUp:
+            lookingUpView
+        case .scanning:
+            if flow.sheet != nil {
+                // A sheet is covering the whole screen, so nothing here is
+                // visible, but the branch change still matters: it tears
+                // the scanner fully out of the view tree instead of merely
+                // covering it, releasing the camera session while the
+                // person is on the sheet and guaranteeing a genuinely
+                // fresh scanner, not a resumed one, once the sheet closes.
+                Color.clear
+            } else {
+                scannerOrFallback
+            }
+        }
+    }
+
+    /// Regular: scanner on the leading side, the current lookup, rejection
+    /// or result on the trailing side. The camera is never torn down, so
+    /// the next bottle can be scanned while the last one's result is still
+    /// open.
+    private var panelLayout: some View {
+        HStack(spacing: 0) {
+            scannerOrFallback
+                .frame(maxWidth: .infinity)
+            if flow.phase != .scanning || flow.sheet != nil {
+                Divider()
+                panelContent
+                    .frame(minWidth: 340, idealWidth: 400, maxWidth: 440)
+                    .background(.background)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var panelContent: some View {
+        switch flow.phase {
+        case .rejected:
+            rejectionView
+        case .lookingUp:
+            lookingUpView
+        case .scanning:
+            if let sheet = flow.sheet {
+                sheetContent(sheet)
+                    .environment(\.panelDismiss, { flow.sheet = nil })
+                    // New content per result, so one result's state never
+                    // leaks into the next.
+                    .id(sheet.id)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var scannerOrFallback: some View {
+        if LiveScannerView.isSupported {
+            scannerScreen
+        } else {
+            manualEntryFallback
+        }
+    }
+
+    @ViewBuilder
+    private func sheetContent(_ sheet: ScanFlow.Sheet) -> some View {
+        switch sheet {
+        case .result(let result, let product):
+            LookupResultSheet(
+                barcode: result.barcode,
+                product: product,
+                matchedDistillery: matchDistillery(for: product)
+            )
+        case .manualEntry(let barcode):
+            BottleFormView(
+                bottle: nil,
+                prefill: LookupPrefill(barcode: barcode),
+                barcodeIsLocked: true,
+                notice: Strings.Scan.missNotice,
+                offersLabelScan: true
+            )
+        case .duplicate(let bottle):
+            DuplicateBottleSheet(bottle: bottle)
+        case .labelScanResult(let result, let photoData):
+            LabelScanResultSheet(
+                result: result,
+                capturedPhotoData: photoData,
+                onRetake: { flow.retakeLabel() },
+                onSaved: { flow.sheet = nil }
+            )
+        case .manualForm:
+            BottleFormView(bottle: nil, offersLabelScan: true)
         }
     }
 
@@ -123,8 +230,8 @@ struct ScanView: View {
     private var scannerScreen: some View {
         LiveScannerView(
             mode: scanMode,
-            onScan: scanMode == .barcode ? { process(barcode: $0) } : nil,
-            onTextUpdate: scanMode == .label ? { recognizedTextLines = $0 } : nil,
+            onScan: scanMode == .barcode ? { flow.process(barcode: $0) } : nil,
+            onTextUpdate: scanMode == .label ? { flow.labelReader.update(lines: $0) } : nil,
             onScannerReady: { liveScanner = $0 }
         )
         // recognizedDataTypes is fixed at construction, so a mode change
@@ -143,13 +250,13 @@ struct ScanView: View {
                 }
                 modePicker
                 Button {
-                    activeSheet = .manualForm
+                    flow.presentManualForm()
                 } label: {
                     Text(Strings.Scan.enterManually)
-                        .font(.footnote.weight(.medium))
+                        .font(.footnote.weight(.semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
+                        .frame(minHeight: 44)
                         .background(.black.opacity(0.35), in: Capsule())
                 }
                 .buttonStyle(.plain)
@@ -157,11 +264,11 @@ struct ScanView: View {
             .padding(.bottom, 24)
         }
         // On the whole screen rather than on the picker: switching away
-        // and back (label → barcode → label) would otherwise leave the
+        // and back (label, barcode, label) would otherwise leave the
         // previous session's lines in state, showing a stale "Use This
         // Label" before the new session has read anything.
         .onChange(of: scanMode) {
-            recognizedTextLines = []
+            flow.resetLiveReading()
             liveScanner = nil
         }
     }
@@ -184,7 +291,7 @@ struct ScanView: View {
     /// accept button once there's enough to name a distillery.
     private var labelReadout: some View {
         Group {
-            if let result = liveLabelResult {
+            if let result = flow.labelReader.result {
                 Button {
                     acceptLabelRead(result)
                 } label: {
@@ -197,6 +304,7 @@ struct ScanView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
+                    .frame(minHeight: 44)
                     .background(.regularMaterial, in: Capsule())
                 }
                 .buttonStyle(.plain)
@@ -211,90 +319,54 @@ struct ScanView: View {
         }
     }
 
-    /// A cheap re-parse of whatever text has accumulated so far — not a
-    /// second recognition pass.
-    private var liveLabelResult: LabelScanResult? {
-        guard !recognizedTextLines.isEmpty else { return nil }
-        return LabelParser.parse(
-            lines: recognizedTextLines, distilleryStore: distilleryStore, expressionStore: expressionStore
-        )
-    }
-
     private func labelSummary(for result: LabelScanResult) -> String {
         let name = result.name.isEmpty ? result.distilleryName : result.name
         return name.isEmpty ? Strings.Scan.labelReadingNothingYet : name
     }
 
-    /// Grabs a still frame from the live session so the accepted label read
-    /// still yields a photo of the bottle, then hands both to the
-    /// confirmation sheet.
-    ///
-    /// The still frame is also re-read with `VisionLabelOCRService`, whose
-    /// recognizer is tuned for this specific job (the seed catalog's 292
-    /// distillery names as `customWords`, English autocorrection *off* so
-    /// names like Bunnahabhain survive, a lowered text-height floor so
-    /// small ABV print registers). `DataScannerViewController` does its own
-    /// internal recognition with none of that tuning available, so without
-    /// this step live scanning would quietly be the less accurate path.
+    /// Grabs a still frame from the live session so the accepted label
+    /// read still yields a photo of the bottle; the flow re-reads it with
+    /// the tuned recognizer and presents the confirmation.
     private func acceptLabelRead(_ liveResult: LabelScanResult) {
-        guard let scanner = liveScanner else {
-            activeSheet = .labelScanResult(liveResult, photoData: nil)
-            return
-        }
+        let scanner = liveScanner
         Task {
-            guard let image = try? await scanner.capturePhoto() else {
-                activeSheet = .labelScanResult(liveResult, photoData: nil)
-                return
+            var image: UIImage?
+            if let scanner {
+                image = try? await scanner.capturePhoto()
             }
-            let photoData = image.jpegData(compressionQuality: 0.9)
-            let refined = await Self.refinedResult(
-                from: image, using: labelOCR,
-                distilleryStore: distilleryStore, expressionStore: expressionStore
-            )
-            activeSheet = .labelScanResult(refined ?? liveResult, photoData: photoData)
+            await flow.acceptLabelRead(live: liveResult, capturedImage: image)
         }
-    }
-
-    /// nil when the tuned pass couldn't resolve a distillery — in that case
-    /// the live read wins, since it accumulated across many frames rather
-    /// than betting everything on one captured moment.
-    static func refinedResult(
-        from image: UIImage, using labelOCR: any LabelOCRServicing,
-        distilleryStore: DistilleryStore, expressionStore: ExpressionStore
-    ) async -> LabelScanResult? {
-        guard let lines = try? await labelOCR.recognizeText(in: image),
-              let result = LabelParser.parse(
-                  lines: lines, distilleryStore: distilleryStore, expressionStore: expressionStore
-              ),
-              !result.distilleryName.isEmpty else {
-            return nil
-        }
-        return result
     }
 
     // MARK: - States
 
     private var lookingUpView: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
             ProgressView()
             Text(Strings.Scan.lookingUp)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+            Button(Strings.Scan.cancelLookup) {
+                flow.cancelLookup()
+            }
+            .buttonStyle(.bordered)
+            .frame(minHeight: 44)
         }
     }
 
     private var rejectionView: some View {
         VStack(spacing: 16) {
             Image(systemName: "hand.raised")
-                .font(.system(size: 44))
+                .font(.largeTitle)
+                .imageScale(.large)
                 .foregroundStyle(.secondary)
             Text(Strings.Policy.rejection)
                 .font(.headline)
                 .multilineTextAlignment(.center)
             Button(Strings.Scan.scanAgain) {
-                showingRejection = false
+                flow.dismissRejection()
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.accentProminent)
         }
         .padding(32)
     }
@@ -303,7 +375,8 @@ struct ScanView: View {
     private var manualEntryFallback: some View {
         VStack(spacing: 20) {
             Image(systemName: "barcode.viewfinder")
-                .font(.system(size: 52))
+                .font(.largeTitle)
+                .imageScale(.large)
                 .foregroundStyle(.secondary)
             Text(Strings.Scan.cameraUnavailable)
                 .font(.subheadline)
@@ -314,55 +387,19 @@ struct ScanView: View {
                 .textFieldStyle(.roundedBorder)
                 .frame(maxWidth: 240)
             Button(Strings.Scan.lookUp) {
-                let code = manualBarcode.trimmingCharacters(in: .whitespaces)
+                let code = manualBarcode
                 manualBarcode = ""
-                process(barcode: code)
+                flow.process(barcode: code)
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(manualBarcode.trimmingCharacters(in: .whitespaces).isEmpty)
+            .buttonStyle(.accentProminent)
+            // Only a plausible GTIN gets sent to the lookup APIs.
+            .disabled(Barcode.normalized(manualBarcode) == nil)
             Button(Strings.Scan.enterManually) {
-                activeSheet = .manualForm
+                flow.presentManualForm()
             }
             .buttonStyle(.bordered)
         }
         .padding(32)
-    }
-
-    // MARK: - Flow
-
-    private func process(barcode: String) {
-        guard !barcode.isEmpty, !isLookingUp, activeSheet == nil, !showingRejection else { return }
-
-        // Duplicate handling: jump to the existing bottle, never add twice.
-        if let existing = existingBottle(barcode: barcode) {
-            activeSheet = .duplicate(existing)
-            return
-        }
-
-        isLookingUp = true
-        Task {
-            let result = await barcodeLookup.lookup(barcode: barcode)
-            isLookingUp = false
-            switch result.outcome {
-            case .hit(let product):
-                if collectionPolicy.clearlyDisallows(categoryTags: product.categoryTags) {
-                    showingRejection = true
-                } else {
-                    // Ambiguous data falls through to the result sheet /
-                    // form, never a hard reject (PRD F1).
-                    activeSheet = .result(result, product)
-                }
-            case .miss:
-                activeSheet = .manualEntry(barcode: barcode)
-            }
-        }
-    }
-
-    private func existingBottle(barcode: String) -> Bottle? {
-        let descriptor = FetchDescriptor<Bottle>(
-            predicate: #Predicate { $0.barcode == barcode }
-        )
-        return (try? modelContext.fetch(descriptor))?.first
     }
 
     private func matchDistillery(for product: LookupProduct) -> Distillery? {
@@ -380,23 +417,33 @@ struct ScanView: View {
 /// an "already in your collection" toast.
 private struct DuplicateBottleSheet: View {
     let bottle: Bottle
+    private var dismiss = ContextualDismiss()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingToast = true
 
     var body: some View {
         NavigationStack {
             BottleDetailView(bottle: bottle)
+                // Swipe-to-dismiss alone isn't discoverable, and VoiceOver
+                // and Switch Control users need a visible way out.
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button(Strings.Common.done) { dismiss() }
+                    }
+                }
         }
+        .editorRouting()
         .overlay(alignment: .top) {
             if showingToast {
                 Text(Strings.Scan.duplicateToast)
                     .pillLabel()
                     .padding(.top, 8)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
             }
         }
         .task {
             try? await Task.sleep(for: .seconds(2.5))
-            withAnimation { showingToast = false }
+            withAnimation(Theme.Motion.quick) { showingToast = false }
         }
     }
 }

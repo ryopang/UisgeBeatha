@@ -21,58 +21,71 @@ struct DistilleryCardView: View {
     }
 
     var body: some View {
-        if seed != nil || summary != nil {
-            VStack(alignment: .leading, spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(Strings.Distillery.cardTitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(seed?.name ?? distilleryName)
-                        .font(.headline)
-                }
+        // The fetch is attached outside the conditional: a distillery that
+        // isn't in the seed data starts with neither a seed nor a summary,
+        // so a `.task` inside the branch never ran and the PRD F6
+        // "{name}_distillery" fallback could never fire. A VStack rather
+        // than a Group: modifiers on an empty Group have no child to attach
+        // to, so the task would still never run.
+        VStack(spacing: 0) {
+            if seed != nil || summary != nil {
+                card
+            }
+        }
+        .task(id: distilleryName) {
+            summary = nil
+            summary = await wikipedia.summary(forTitles: titleCandidates)
+        }
+        .sheet(isPresented: $showingSafari) {
+            if let url = wikipediaURL {
+                SafariView(url: url)
+                    .ignoresSafeArea()
+            }
+        }
+    }
 
-                if let seed {
-                    HStack(spacing: 20) {
-                        seedFact(Strings.Distillery.founded, String(seed.founded))
-                        seedFact(Strings.Distillery.owner, seed.owner)
-                    }
-                }
+    private var card: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(Strings.Distillery.cardTitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(seed?.name ?? distilleryName)
+                    .font(.headline)
+            }
 
-                if let summary {
-                    HStack(alignment: .top, spacing: 12) {
-                        if let thumbnail = summary.thumbnailURL, let url = URL(string: thumbnail) {
-                            AsyncImage(url: url) { image in
-                                image.resizable().scaledToFill()
-                            } placeholder: {
-                                Color.clear
-                            }
-                            .frame(width: 64, height: 64)
-                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.inline))
-                            .accessibilityHidden(true)
-                        }
-                        Text(summary.extract)
-                            .font(.callout)
-                            .lineLimit(8)
-                    }
-                    if wikipediaURL != nil {
-                        Button(Strings.Distillery.readMore, systemImage: "safari") {
-                            showingSafari = true
-                        }
-                        .font(.subheadline)
-                    }
+            if let seed {
+                HStack(spacing: 20) {
+                    seedFact(Strings.Distillery.founded, String(seed.founded))
+                    seedFact(Strings.Distillery.owner, seed.owner)
                 }
             }
-            .cardBackground()
-            .task(id: distilleryName) {
-                summary = await wikipedia.summary(forTitles: titleCandidates)
-            }
-            .sheet(isPresented: $showingSafari) {
-                if let url = wikipediaURL {
-                    SafariView(url: url)
-                        .ignoresSafeArea()
+
+            if let summary {
+                HStack(alignment: .top, spacing: 12) {
+                    if let thumbnail = summary.thumbnailURL, let url = URL(string: thumbnail) {
+                        AsyncImage(url: url) { image in
+                            image.resizable().scaledToFill()
+                        } placeholder: {
+                            Color.clear
+                        }
+                        .frame(width: 64, height: 64)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.inline))
+                        .accessibilityHidden(true)
+                    }
+                    Text(summary.extract)
+                        .font(.callout)
+                        .lineLimit(8)
+                }
+                if wikipediaURL != nil {
+                    Button(Strings.Distillery.readMore, systemImage: "safari") {
+                        showingSafari = true
+                    }
+                    .font(.subheadline)
                 }
             }
         }
+        .cardBackground()
     }
 
     /// Seed title first; unknown distilleries try the common patterns (PRD F6).

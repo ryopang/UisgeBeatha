@@ -22,7 +22,7 @@ struct LabelScanResultSheet: View {
     var onSaved: (() -> Void)?
 
     @Environment(\.distilleryStore) private var distilleryStore
-    @Environment(\.dismiss) private var dismiss
+    private var dismiss = ContextualDismiss()
 
     @State private var distilleryName: String
     @State private var region: String
@@ -52,7 +52,8 @@ struct LabelScanResultSheet: View {
     private var prefill: LookupPrefill {
         LookupPrefill(
             name: result.name, distilleryName: distilleryName, region: region,
-            abv: result.abv, age: result.isNAS ? nil : result.age
+            abv: result.abv, age: result.isNAS ? nil : result.age,
+            caskType: result.cask
         )
     }
 
@@ -75,7 +76,8 @@ struct LabelScanResultSheet: View {
                             .accessibilityHidden(true)
                     } else {
                         Image(systemName: "text.viewfinder")
-                            .font(.system(size: 44))
+                            .font(.largeTitle)
+                            .imageScale(.large)
                             .foregroundStyle(.secondary)
                             .frame(height: 72)
                             .accessibilityHidden(true)
@@ -98,7 +100,7 @@ struct LabelScanResultSheet: View {
                         Button(Strings.Scan.addToCollection) {
                             showingAddForm = true
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.accentProminent)
                         Button(Strings.ScanResult.retake, role: .cancel) {
                             onRetake()
                         }
@@ -124,6 +126,9 @@ struct LabelScanResultSheet: View {
                         dismiss()
                     }
                 )
+                // A sheet presented from inside a panel must close itself,
+                // not the panel.
+                .environment(\.panelDismiss, nil)
             }
             .sheet(isPresented: $showingDistilleryPicker) {
                 DistilleryPickerSheet(
