@@ -52,7 +52,8 @@ struct LabelScanResultSheet: View {
     private var prefill: LookupPrefill {
         LookupPrefill(
             name: result.name, distilleryName: distilleryName, region: region,
-            abv: result.abv, age: result.isNAS ? nil : result.age
+            abv: result.abv, age: result.isNAS ? nil : result.age,
+            caskType: result.cask
         )
     }
 

@@ -216,6 +216,9 @@ nonisolated struct LabelScanResult: Sendable, Equatable {
     var age: Int?
     var isNAS = false
     var ageProvenance = FieldProvenance.none
+    /// Cask or finish, only ever set by the on-device model (the
+    /// heuristic parser doesn't read it).
+    var cask: String?
     /// Other plausible distilleries, offered when the top match came from a
     /// fuzzy tier and might be wrong — never populated for a confident match.
     var alternateDistilleries: [Distillery] = []
@@ -223,7 +226,7 @@ nonisolated struct LabelScanResult: Sendable, Equatable {
     func asPrefill(barcode: String? = nil, stockPhotoURL: String? = nil) -> LookupPrefill {
         LookupPrefill(
             name: name, distilleryName: distilleryName, region: region,
-            abv: abv, age: age, barcode: barcode, stockPhotoURL: stockPhotoURL
+            abv: abv, age: age, caskType: cask, barcode: barcode, stockPhotoURL: stockPhotoURL
         )
     }
 }

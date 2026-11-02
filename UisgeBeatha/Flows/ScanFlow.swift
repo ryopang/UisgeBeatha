@@ -51,6 +51,7 @@ final class ScanFlow {
     @ObservationIgnored private let lookup: any BarcodeLookupServicing
     @ObservationIgnored private let policy: CollectionPolicy
     @ObservationIgnored private let labelOCR: any LabelOCRServicing
+    @ObservationIgnored private let extractor: any BottleExtracting
     @ObservationIgnored private let distilleryStore: DistilleryStore
     @ObservationIgnored private let expressionStore: ExpressionStore
     @ObservationIgnored private let findExistingBottle: (String) -> Bottle?
@@ -67,6 +68,7 @@ final class ScanFlow {
         lookup: any BarcodeLookupServicing,
         policy: CollectionPolicy,
         labelOCR: any LabelOCRServicing,
+        extractor: any BottleExtracting = NoOpBottleExtractor(),
         distilleryStore: DistilleryStore,
         expressionStore: ExpressionStore,
         findExistingBottle: @escaping (String) -> Bottle?
@@ -74,6 +76,7 @@ final class ScanFlow {
         self.lookup = lookup
         self.policy = policy
         self.labelOCR = labelOCR
+        self.extractor = extractor
         self.distilleryStore = distilleryStore
         self.expressionStore = expressionStore
         self.findExistingBottle = findExistingBottle
@@ -163,7 +166,20 @@ final class ScanFlow {
             image: capturedImage, using: labelOCR,
             distilleryStore: distilleryStore, expressionStore: expressionStore
         )
-        sheet = .labelScanResult(refined?.result ?? live, photoData: await photoData)
+        let base = refined?.result ?? live
+        // The on-device model fills gaps the heuristics left, within the
+        // merge rules and a time budget; with no model this is `base`.
+        let enhanced = await extractor.enhance(
+            base, lines: refined?.lines ?? labelReader.lines,
+            distilleryStore: distilleryStore, expressionStore: expressionStore
+        )
+        sheet = .labelScanResult(enhanced ?? base, photoData: await photoData)
+    }
+
+    /// Warms the on-device model when label mode opens, so "Use This
+    /// Label" doesn't pay the model's cold start.
+    func prewarmExtractor() {
+        extractor.prewarm()
     }
 
     /// "Retake" from the label confirmation: back to a fresh scanner.

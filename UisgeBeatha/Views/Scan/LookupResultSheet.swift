@@ -9,7 +9,15 @@ struct LookupResultSheet: View {
     let matchedDistillery: Distillery?
 
     private var dismiss = ContextualDismiss()
+    @Environment(\.distilleryStore) private var distilleryStore
+    @Environment(\.expressionStore) private var expressionStore
+    @Environment(\.bottleExtractor) private var bottleExtractor
+
     @State private var showingAddForm = false
+    /// What the on-device model added on top of the heuristics, if it is
+    /// available and found anything. Arrives a moment after the sheet
+    /// opens; the sheet is fully usable before and without it.
+    @State private var enhanced: LabelScanResult?
 
     /// Neither lookup tier always returns ABV (UPCitemdb never does), and
     /// neither returns an age statement at all, so both fall back to
@@ -21,20 +29,45 @@ struct LookupResultSheet: View {
     }
 
     private var resolvedABV: Double? {
-        product.abv ?? WhiskyLabelParser.abv(in: searchableText)
+        product.abv ?? WhiskyLabelParser.abv(in: searchableText) ?? enhanced?.abv
     }
 
     private var resolvedAge: Int? {
-        WhiskyLabelParser.age(in: searchableText)
+        WhiskyLabelParser.age(in: searchableText) ?? enhanced?.age
+    }
+
+    /// The heuristic read, shaped like a label scan so the same merge rules
+    /// that guard label scanning guard this too. Heuristic fields are
+    /// `confident`, so the model can only fill what they left empty.
+    private var heuristicResult: LabelScanResult {
+        var result = LabelScanResult()
+        result.name = product.name
+        result.nameProvenance = .confident
+        if let matchedDistillery {
+            result.distilleryName = matchedDistillery.name
+            result.region = matchedDistillery.region
+            result.distilleryProvenance = .confident
+        }
+        if let abv = product.abv ?? WhiskyLabelParser.abv(in: searchableText) {
+            result.abv = abv
+            result.abvProvenance = .confident
+        }
+        if let age = WhiskyLabelParser.age(in: searchableText) {
+            result.age = age
+            result.ageProvenance = .confident
+        }
+        return result
     }
 
     private var prefill: LookupPrefill {
-        LookupPrefill(
+        let modelDistillery = enhanced.flatMap { $0.distilleryName.isEmpty ? nil : $0 }
+        return LookupPrefill(
             name: product.name,
-            distilleryName: matchedDistillery?.name ?? product.brand ?? "",
-            region: matchedDistillery?.region ?? "",
+            distilleryName: matchedDistillery?.name ?? modelDistillery?.distilleryName ?? product.brand ?? "",
+            region: matchedDistillery?.region ?? modelDistillery?.region ?? "",
             abv: resolvedABV,
             age: resolvedAge,
+            caskType: enhanced?.cask,
             barcode: barcode,
             stockPhotoURL: product.imageURL
         )
@@ -84,6 +117,14 @@ struct LookupResultSheet: View {
                     }
                 }
                 .padding()
+            }
+            .task {
+                guard enhanced == nil else { return }
+                let base = heuristicResult
+                enhanced = await bottleExtractor.enhance(
+                    base, lines: searchableText,
+                    distilleryStore: distilleryStore, expressionStore: expressionStore
+                )
             }
             .navigationTitle(Strings.Scan.resultTitle)
             .navigationBarTitleDisplayMode(.inline)

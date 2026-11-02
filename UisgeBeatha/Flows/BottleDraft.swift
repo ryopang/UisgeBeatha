@@ -8,6 +8,7 @@ struct LookupPrefill: Sendable {
     var region = ""
     var abv: Double?
     var age: Int?
+    var caskType: String?
     var barcode: String?
     var stockPhotoURL: String?
 }
@@ -52,7 +53,7 @@ final class BottleDraft {
         abv = bottle?.abv ?? prefill?.abv
         isNAS = bottle.map { $0.ageStatement == nil } ?? false
         age = bottle?.ageStatement ?? prefill?.age
-        caskType = bottle?.caskType ?? ""
+        caskType = bottle?.caskType ?? prefill?.caskType ?? ""
         price = bottle?.purchasePrice
         hasPurchaseDate = bottle?.purchaseDate != nil
         purchaseDate = bottle?.purchaseDate ?? .now
@@ -143,11 +144,37 @@ final class BottleDraft {
         apply(result)
     }
 
+    /// `applyLabelScan`, then the on-device model's pass on top. The
+    /// heuristic result lands immediately; the model only adds to it.
+    func applyLabelScan(
+        lines: [String], distilleryStore: DistilleryStore, expressionStore: ExpressionStore,
+        extractor: any BottleExtracting
+    ) async {
+        let parsed = LabelParser.parse(
+            lines: lines, distilleryStore: distilleryStore, expressionStore: expressionStore
+        )
+        if let parsed {
+            apply(parsed)
+        } else {
+            labelScanBanner = Strings.Form.labelScanFailure
+        }
+        let enhanced = await extractor.enhance(
+            parsed, lines: lines, distilleryStore: distilleryStore, expressionStore: expressionStore
+        )
+        if let enhanced, enhanced != parsed {
+            apply(enhanced)
+        }
+    }
+
     func apply(_ result: LabelScanResult) {
         if !result.name.isEmpty { name = result.name }
         if !result.distilleryName.isEmpty { distilleryName = result.distilleryName }
         if !result.region.isEmpty { region = result.region }
         if let abv = result.abv { self.abv = abv }
+        if let cask = result.cask, !cask.isEmpty,
+           caskType.trimmingCharacters(in: .whitespaces).isEmpty {
+            caskType = cask
+        }
         if result.isNAS { isNAS = true }
         if let age = result.age {
             self.age = age

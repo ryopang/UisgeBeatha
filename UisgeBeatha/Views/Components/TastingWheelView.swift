@@ -1,9 +1,62 @@
 import SwiftUI
 
+/// Where a point lands on the wheel. Pure geometry, shared by the drawing
+/// code's proportions and the tap handler, and unit tested.
+nonisolated enum WheelGeometry {
+    /// Ring proportions as fractions of the outer radius.
+    static let innerFraction: CGFloat = 0.22
+    static let midFraction: CGFloat = 0.60
+    /// Space kept clear around the outer edge.
+    static let margin: CGFloat = 4
+
+    /// The word under `point` in a wheel drawn in `size`: a descriptor on
+    /// the outer ring, a category name on the inner ring, nil in the hub or
+    /// outside the wheel. Categories run clockwise from 12 o'clock.
+    static func word(at point: CGPoint, in size: CGSize) -> String? {
+        let center = CGPoint(x: size.width / 2, y: size.height / 2)
+        let outerRadius = min(size.width, size.height) / 2 - margin
+        let midRadius = outerRadius * midFraction
+        let innerRadius = outerRadius * innerFraction
+
+        let dx = point.x - center.x
+        let dy = point.y - center.y
+        let radius = (dx * dx + dy * dy).squareRoot()
+        guard radius >= innerRadius, radius <= outerRadius else { return nil }
+
+        // atan2 with a downward y axis already runs clockwise; shift so 0
+        // is 12 o'clock.
+        var degrees = atan2(dy, dx) * 180 / .pi + 90
+        degrees = degrees.truncatingRemainder(dividingBy: 360)
+        if degrees < 0 { degrees += 360 }
+
+        let categories = WheelVocabulary.categories
+        let categorySweep = 360 / CGFloat(categories.count)
+        let categoryIndex = min(Int(degrees / categorySweep), categories.count - 1)
+        let category = categories[categoryIndex]
+        if radius < midRadius { return category.name }
+
+        let descriptorSweep = categorySweep / CGFloat(category.descriptors.count)
+        let offset = degrees - CGFloat(categoryIndex) * categorySweep
+        let descriptorIndex = min(Int(offset / descriptorSweep), category.descriptors.count - 1)
+        return category.descriptors[descriptorIndex]
+    }
+}
+
 /// An original two-ring whisky tasting wheel drawn natively in SwiftUI
 /// (PRD F7). Inner ring: 8 flavour categories; outer ring: 3 descriptors
-/// per category. Reference-only in v1 — segments are not tappable.
+/// per category. When `onSelect` is set, tapping a segment reports its
+/// word; the wheel itself stays a reference otherwise.
 struct TastingWheelView: View {
+    /// Called with the tapped descriptor, or category name for the inner
+    /// ring. nil makes the wheel reference-only.
+    var onSelect: ((String) -> Void)?
+
+    /// Labels scale with Dynamic Type. The wheel's segments are fixed
+    /// shapes, so very large sizes are better served by the list
+    /// alternative in `TastingWheelSheet`.
+    @ScaledMetric(relativeTo: .caption) private var categoryFontSize: CGFloat = 11
+    @ScaledMetric(relativeTo: .caption2) private var descriptorFontSize: CGFloat = 9
+
     struct Category: Identifiable {
         let name: String
         let descriptors: [String]
@@ -26,9 +79,9 @@ struct TastingWheelView: View {
     var body: some View {
         Canvas { context, size in
             let center = CGPoint(x: size.width / 2, y: size.height / 2)
-            let outerRadius = min(size.width, size.height) / 2 - 4
-            let midRadius = outerRadius * 0.60
-            let innerRadius = outerRadius * 0.22
+            let outerRadius = min(size.width, size.height) / 2 - WheelGeometry.margin
+            let midRadius = outerRadius * WheelGeometry.midFraction
+            let innerRadius = outerRadius * WheelGeometry.innerFraction
             let categories = Self.categories
             let categorySweep = Angle.degrees(360.0 / Double(categories.count))
 
@@ -47,7 +100,7 @@ struct TastingWheelView: View {
                     category.name, context: context, center: center,
                     radius: (innerRadius + midRadius) / 2,
                     angle: start + categorySweep / 2,
-                    font: .system(size: 11, weight: .bold),
+                    font: .system(size: categoryFontSize, weight: .bold),
                     color: .white
                 )
 
@@ -67,7 +120,7 @@ struct TastingWheelView: View {
                         descriptor, context: context, center: center,
                         radius: (midRadius + outerRadius) / 2,
                         angle: descriptorStart + descriptorSweep / 2,
-                        font: .system(size: 9, weight: .medium),
+                        font: .system(size: descriptorFontSize, weight: .semibold),
                         color: .primary,
                         radially: true
                     )
@@ -75,6 +128,19 @@ struct TastingWheelView: View {
             }
         }
         .aspectRatio(1, contentMode: .fit)
+        .overlay {
+            if let onSelect {
+                GeometryReader { proxy in
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { location in
+                            if let word = WheelGeometry.word(at: location, in: proxy.size) {
+                                onSelect(word)
+                            }
+                        }
+                }
+            }
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Strings.Wheel.accessibilitySummary)
     }
@@ -126,17 +192,45 @@ struct TastingWheelView: View {
     }
 }
 
-/// The reference sheet presented from the tasting note editor.
+/// The wheel sheet presented from the tasting note editor: the wheel, plus
+/// an accessible list of the same words. With `onSelect`, tapping a word
+/// adds it to the note being written.
 struct TastingWheelSheet: View {
+    var onSelect: ((String) -> Void)?
+
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
+
+    /// nil = follow the default: the list when the wheel's small labels
+    /// can't scale (accessibility type sizes) or VoiceOver is on.
+    @State private var showsListOverride: Bool?
+
+    private var showsList: Bool {
+        showsListOverride ?? (dynamicTypeSize.isAccessibilitySize || voiceOverEnabled)
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
-                    TastingWheelView()
-                        .padding(.horizontal, 12)
-                    Text(Strings.Wheel.caption)
+                    Picker(Strings.Wheel.layout, selection: Binding(
+                        get: { showsList },
+                        set: { showsListOverride = $0 }
+                    )) {
+                        Text(Strings.Wheel.wheelMode).tag(false)
+                        Text(Strings.Wheel.listMode).tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal)
+
+                    if showsList {
+                        wordList
+                    } else {
+                        TastingWheelView(onSelect: onSelect)
+                            .padding(.horizontal, 12)
+                    }
+                    Text(onSelect == nil ? Strings.Wheel.caption : Strings.Wheel.tapHint)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -152,6 +246,31 @@ struct TastingWheelSheet: View {
                 }
             }
         }
+    }
+
+    /// The same vocabulary as plain buttons: readable at any text size and
+    /// fully navigable with VoiceOver.
+    private var wordList: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            ForEach(WheelVocabulary.categories, id: \.name) { category in
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(category.name)
+                        .font(.headline)
+                        .accessibilityAddTraits(.isHeader)
+                    ForEach(category.descriptors, id: \.self) { word in
+                        if let onSelect {
+                            Button(word) { onSelect(word) }
+                                .buttonStyle(.bordered)
+                                .frame(minHeight: 44)
+                        } else {
+                            Text(word)
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal)
     }
 }
 

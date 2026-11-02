@@ -30,6 +30,7 @@ struct BottleFormView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.distilleryStore) private var distilleryStore
     @Environment(\.expressionStore) private var expressionStore
+    @Environment(\.bottleExtractor) private var bottleExtractor
     @Environment(\.imageStore) private var imageStore
     @Environment(\.stockPhotoBackfill) private var stockPhotoBackfill
     private var dismiss = ContextualDismiss()
@@ -233,9 +234,12 @@ struct BottleFormView: View {
                 onLabel: { lines, photoData in
                     activeScanMode = nil
                     if let photoData { draft.labelPhotoData = photoData }
-                    draft.applyLabelScan(
-                        lines: lines, distilleryStore: distilleryStore, expressionStore: expressionStore
-                    )
+                    Task {
+                        await draft.applyLabelScan(
+                            lines: lines, distilleryStore: distilleryStore,
+                            expressionStore: expressionStore, extractor: bottleExtractor
+                        )
+                    }
                 }
             )
         }

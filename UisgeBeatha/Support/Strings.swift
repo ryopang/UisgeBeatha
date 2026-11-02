@@ -193,11 +193,17 @@ nonisolated enum Strings {
         static let finish = "Finish"
         static let conclusion = "Conclusion"
         static let wheelButton = "Flavour Wheel"
+        static let suggestWords = "Suggest Words"
+        static let suggestNone = "Nothing to suggest yet. Write a little more."
     }
 
     enum Wheel {
         static let title = "Flavour Wheel"
         static let done = "Done"
+        static let layout = "Layout"
+        static let wheelMode = "Wheel"
+        static let listMode = "List"
+        static let tapHint = "Tap a word to add it to your note."
         static let caption = "A reference for finding the words: categories on the inner ring, descriptors on the outer."
         static let accessibilitySummary = "Whisky flavour wheel with eight categories: Smoky, Fruity, Floral, Malty, Woody, Spicy, Sweet, and Maritime."
 

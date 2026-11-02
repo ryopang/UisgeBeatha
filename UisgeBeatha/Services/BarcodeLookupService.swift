@@ -264,6 +264,12 @@ struct UPCItemDBTier: BarcodeLookupTier {
 ///    detection here is line-window aware (see `LabelParser`); this type
 ///    stays a pure per-text-window matcher.
 nonisolated enum WhiskyLabelParser {
+    /// What counts as a plausible bottle statement. Shared with the
+    /// on-device model validation so a model can never fill a value the
+    /// heuristics themselves would reject.
+    static let plausibleAge = 3...50
+    static let plausibleABV = 20.0...80.0
+
     static func abv(from name: String) -> Double? {
         abv(in: [name])
     }
@@ -274,7 +280,7 @@ nonisolated enum WhiskyLabelParser {
 
     static func abv(in texts: [String]) -> Double? {
         for text in texts {
-            for value in percentMatches(in: text) where (20...80).contains(value) {
+            for value in percentMatches(in: text) where plausibleABV.contains(value) {
                 return value
             }
         }

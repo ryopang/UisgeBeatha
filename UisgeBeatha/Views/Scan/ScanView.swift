@@ -13,6 +13,7 @@ struct ScanView: View {
     @Environment(\.distilleryStore) private var distilleryStore
     @Environment(\.expressionStore) private var expressionStore
     @Environment(\.labelOCR) private var labelOCR
+    @Environment(\.bottleExtractor) private var bottleExtractor
 
     @State private var flow: ScanFlow?
 
@@ -35,6 +36,7 @@ struct ScanView: View {
             lookup: barcodeLookup,
             policy: collectionPolicy,
             labelOCR: labelOCR,
+            extractor: bottleExtractor,
             distilleryStore: distilleryStore,
             expressionStore: expressionStore,
             findExistingBottle: { barcode in Self.existingBottle(barcode: barcode, in: context) }
@@ -118,6 +120,9 @@ private struct ScanScreen: View {
             }
             .onChange(of: usesPanel, initial: true) {
                 flow.showsResultsBesideScanner = usesPanel
+            }
+            .onChange(of: scanMode, initial: true) {
+                if scanMode == .label { flow.prewarmExtractor() }
             }
         }
     }
