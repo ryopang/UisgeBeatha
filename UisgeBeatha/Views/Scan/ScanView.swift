@@ -314,12 +314,13 @@ struct ScanView: View {
                 .textFieldStyle(.roundedBorder)
                 .frame(maxWidth: 240)
             Button(Strings.Scan.lookUp) {
-                let code = manualBarcode.trimmingCharacters(in: .whitespaces)
+                let code = manualBarcode
                 manualBarcode = ""
                 process(barcode: code)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(manualBarcode.trimmingCharacters(in: .whitespaces).isEmpty)
+            // Only a plausible GTIN gets sent to the lookup APIs.
+            .disabled(Barcode.normalized(manualBarcode) == nil)
             Button(Strings.Scan.enterManually) {
                 activeSheet = .manualForm
             }
@@ -330,8 +331,12 @@ struct ScanView: View {
 
     // MARK: - Flow
 
-    private func process(barcode: String) {
-        guard !barcode.isEmpty, !isLookingUp, activeSheet == nil, !showingRejection else { return }
+    private func process(barcode rawBarcode: String) {
+        // Canonical digits only: nothing else reaches an API URL or the
+        // cache, and a UPC-A typed as 12 digits matches its scanned
+        // 13-digit form.
+        guard let barcode = Barcode.normalized(rawBarcode),
+              !isLookingUp, activeSheet == nil, !showingRejection else { return }
 
         // Duplicate handling: jump to the existing bottle, never add twice.
         if let existing = existingBottle(barcode: barcode) {
@@ -359,8 +364,13 @@ struct ScanView: View {
     }
 
     private func existingBottle(barcode: String) -> Bottle? {
+        // Bottles saved before normalization may hold the 12-digit UPC-A
+        // form of the same code.
+        let variants = Barcode.storedVariants(of: barcode)
+        let canonical = variants[0]
+        let legacy = variants.last ?? canonical
         let descriptor = FetchDescriptor<Bottle>(
-            predicate: #Predicate { $0.barcode == barcode }
+            predicate: #Predicate { $0.barcode == canonical || $0.barcode == legacy }
         )
         return (try? modelContext.fetch(descriptor))?.first
     }
@@ -380,11 +390,19 @@ struct ScanView: View {
 /// an "already in your collection" toast.
 private struct DuplicateBottleSheet: View {
     let bottle: Bottle
+    @Environment(\.dismiss) private var dismiss
     @State private var showingToast = true
 
     var body: some View {
         NavigationStack {
             BottleDetailView(bottle: bottle)
+                // Swipe-to-dismiss alone isn't discoverable, and VoiceOver
+                // and Switch Control users need a visible way out.
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button(Strings.Common.done) { dismiss() }
+                    }
+                }
         }
         .overlay(alignment: .top) {
             if showingToast {

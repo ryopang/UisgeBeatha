@@ -29,7 +29,9 @@ struct TastingNoteCardView: View {
                     Image(systemName: "ellipsis")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .frame(width: 28, height: 28)
+                        // 44pt: the HIG / PRD minimum touch target. The
+                        // glyph stays small; only the hit area grows.
+                        .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
                 .accessibilityLabel(Strings.Detail.noteActions)

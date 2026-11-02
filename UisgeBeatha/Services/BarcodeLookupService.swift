@@ -108,7 +108,7 @@ struct CascadeBarcodeLookupService: BarcodeLookupServicing {
 
 struct OpenFoodFactsTier: BarcodeLookupTier {
     let tierName = "Open Food Facts"
-    var session: URLSession = .shared
+    var session: URLSession = AppNetwork.session
 
     func lookup(barcode: String) async throws -> LookupProduct? {
         guard let url = URL(
@@ -117,7 +117,7 @@ struct OpenFoodFactsTier: BarcodeLookupTier {
         ) else { return nil }
         var request = URLRequest(url: url)
         // OFF etiquette: identify the client.
-        request.setValue("UisgeBeatha/1.0 (personal iOS app)", forHTTPHeaderField: "User-Agent")
+        request.setValue(AppNetwork.userAgent, forHTTPHeaderField: "User-Agent")
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
@@ -186,7 +186,7 @@ struct UPCItemDBTier: BarcodeLookupTier {
     struct RateLimited: Error {}
 
     let tierName = "UPCitemdb"
-    var session: URLSession = .shared
+    var session: URLSession = AppNetwork.session
 
     func lookup(barcode: String) async throws -> LookupProduct? {
         guard let url = URL(string: "https://api.upcitemdb.com/prod/trial/lookup?upc=\(barcode)") else {
@@ -221,11 +221,20 @@ struct UPCItemDBTier: BarcodeLookupTier {
         return LookupProduct(
             name: title,
             brand: item.brand,
-            imageURL: item.images?.first,
+            imageURL: (item.images ?? []).first(where: { !$0.isEmpty }).map(Self.secureImageURL),
             abv: nil,
             categoryTags: [],
             descriptionText: item.description
         )
+    }
+
+    /// UPCitemdb image links point at arbitrary retailer sites and are
+    /// often plain `http://`, which App Transport Security blocks, so the
+    /// photo silently never loaded. Most of those hosts also serve https;
+    /// the ones that don't fail exactly as before.
+    static func secureImageURL(_ url: String) -> String {
+        guard url.lowercased().hasPrefix("http://") else { return url }
+        return "https://" + url.dropFirst("http://".count)
     }
 }
 

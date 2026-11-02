@@ -18,7 +18,7 @@ protocol WikipediaServicing: Sendable {
 }
 
 struct WikipediaService: WikipediaServicing {
-    var session: URLSession = .shared
+    var session: URLSession = AppNetwork.session
     let cache: DiskCache<WikipediaSummary>
 
     private static let logger = Logger(subsystem: "com.ryo.UisgeBeatha", category: "Wikipedia")
@@ -53,7 +53,7 @@ struct WikipediaService: WikipediaServicing {
             return nil
         }
         var request = URLRequest(url: url)
-        request.setValue("UisgeBeatha/1.0 (personal iOS app)", forHTTPHeaderField: "User-Agent")
+        request.setValue(AppNetwork.userAgent, forHTTPHeaderField: "User-Agent")
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         if http.statusCode == 404 { return nil }

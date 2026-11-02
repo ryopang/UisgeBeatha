@@ -118,7 +118,16 @@ enum ExportService {
         return lines.joined(separator: "\r\n") + "\r\n"
     }
 
-    static func escapeCSVField(_ field: String) -> String {
+    /// Leading characters that make Numbers, Excel and Sheets evaluate a
+    /// cell as a formula. Names and notes come from OCR and third-party
+    /// product databases, so a value like `=HYPERLINK(...)` must stay text.
+    private static let formulaTriggers: Set<Character> = ["=", "+", "-", "@", "\t", "\r"]
+
+    static func escapeCSVField(_ rawField: String) -> String {
+        var field = rawField
+        if let first = field.first, formulaTriggers.contains(first) {
+            field = "'" + field
+        }
         if field.contains(",") || field.contains("\"") || field.contains("\n") || field.contains("\r") {
             return "\"" + field.replacingOccurrences(of: "\"", with: "\"\"") + "\""
         }

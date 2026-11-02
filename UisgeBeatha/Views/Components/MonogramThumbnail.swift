@@ -11,18 +11,18 @@ struct MonogramThumbnail: View {
         name.trimmingCharacters(in: .whitespaces).first.map(String.init)?.uppercased() ?? "•"
     }
 
-    private var color: Color {
-        RegionCatalog.region(id: regionID)?.accentColor ?? .secondary
+    private var region: WhiskyRegion? {
+        RegionCatalog.region(id: regionID)
     }
 
     var body: some View {
         RoundedRectangle(cornerRadius: size * 0.24)
-            .fill(color.opacity(0.18))
+            .fill((region?.accentColor ?? .secondary).opacity(0.18))
             .frame(width: size, height: size)
             .overlay {
                 Text(initial)
                     .font(.system(size: size * 0.42, weight: .semibold, design: .rounded))
-                    .foregroundStyle(color)
+                    .foregroundStyle(region?.textColor ?? .secondary)
             }
             .accessibilityHidden(true)
     }

@@ -455,6 +455,19 @@ struct ProductImageSearchTests {
         #expect(WikimediaCommonsImageTier.parse(Data(json.utf8)) == "https://upload.wikimedia.org/x.jpg")
     }
 
+    @Test func wikimediaCommonsPrefersTheSizedThumbnail() {
+        // The original upload can be a multi-megabyte camera file; the
+        // list only ever needs a small rendition.
+        let json = """
+        {"query": {"pages": {"123": {"index": 1, "imageinfo": [
+            {"url": "https://upload.wikimedia.org/x.jpg",
+             "thumburl": "https://upload.wikimedia.org/thumb/x.jpg/800px-x.jpg",
+             "mime": "image/jpeg"}
+        ]}}}}
+        """
+        #expect(WikimediaCommonsImageTier.parse(Data(json.utf8)) == "https://upload.wikimedia.org/thumb/x.jpg/800px-x.jpg")
+    }
+
     @Test func wikimediaCommonsNoPagesIsAMiss() {
         #expect(WikimediaCommonsImageTier.parse(Data(#"{"query": {"pages": {}}}"#.utf8)) == nil)
     }

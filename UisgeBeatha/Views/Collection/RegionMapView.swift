@@ -73,7 +73,7 @@ struct RegionMapView: View {
                     .monospacedDigit()
                     .frame(minWidth: 30, minHeight: 30)
                     .background(
-                        count == 0 ? AnyShapeStyle(.gray) : AnyShapeStyle(region.accentColor),
+                        count == 0 ? AnyShapeStyle(.gray) : AnyShapeStyle(region.badgeFillColor),
                         in: Circle()
                     )
                     .overlay(Circle().strokeBorder(.white.opacity(0.85), lineWidth: 1.5))

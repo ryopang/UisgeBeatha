@@ -18,11 +18,21 @@ struct RatingControl: View {
             }
         }
         .contentShape(Rectangle())
+        // Tap sets the rating directly. Scrubbing needs a deliberate
+        // horizontal drag: the old zero-distance drag claimed every touch
+        // that started on the stars, so scrolling the detail page with a
+        // thumb resting there silently changed the rating.
+        .onTapGesture { location in
+            rating = value(atX: location.x)
+        }
         .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { rating = value(atX: $0.location.x) }
-                .onEnded { rating = value(atX: $0.location.x) }
+            DragGesture(minimumDistance: 12)
+                .onChanged { drag in
+                    guard abs(drag.translation.width) > abs(drag.translation.height) else { return }
+                    rating = value(atX: drag.location.x)
+                }
         )
+        .sensoryFeedback(.selection, trigger: rating)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Strings.Detail.ratingSection)
         .accessibilityValue(rating.map(Strings.Accessibility.rating) ?? Strings.Accessibility.unrated)

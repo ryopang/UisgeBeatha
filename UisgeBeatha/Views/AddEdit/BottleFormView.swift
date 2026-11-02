@@ -118,6 +118,16 @@ struct BottleFormView: View {
         !name.trimmingCharacters(in: .whitespaces).isEmpty
             && !distilleryName.trimmingCharacters(in: .whitespaces).isEmpty
             && RegionCatalog.region(id: region) != nil
+            && valuesAreInRange
+    }
+
+    /// Guards against typos like "430" for 43% or a negative price, which
+    /// the number fields otherwise accept and would then show in the
+    /// detail view and exports.
+    private var valuesAreInRange: Bool {
+        (abv.map { (0...100).contains($0) } ?? true)
+            && (isNAS || (age.map { (0...100).contains($0) } ?? true))
+            && (price.map { $0 >= 0 } ?? true)
     }
 
     private var distillerySuggestions: [Distillery] {
@@ -386,11 +396,16 @@ struct BottleFormView: View {
         target.region = region
         target.abv = abv
         target.ageStatement = isNAS ? nil : age
-        target.caskType = caskType.isEmpty ? nil : caskType
+        let trimmedCask = caskType.trimmingCharacters(in: .whitespaces)
+        target.caskType = trimmedCask.isEmpty ? nil : trimmedCask
         target.purchasePrice = price
         target.purchaseDate = hasPurchaseDate ? purchaseDate : nil
         target.status = status
-        target.barcode = barcode.isEmpty ? nil : barcode
+        // Canonical form when it's a real GTIN, so duplicate detection
+        // matches the scanner's output; anything else is kept as typed
+        // rather than silently discarded.
+        let trimmedBarcode = barcode.trimmingCharacters(in: .whitespaces)
+        target.barcode = Barcode.normalized(trimmedBarcode) ?? (trimmedBarcode.isEmpty ? nil : trimmedBarcode)
         let isNewBottle = bottle == nil
         if isNewBottle {
             // Keep the lookup's stock photo so rows and the detail hero can

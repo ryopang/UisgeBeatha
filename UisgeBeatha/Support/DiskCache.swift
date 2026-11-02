@@ -43,7 +43,7 @@ actor DiskCache<Value: Codable & Sendable> {
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let data = try JSONEncoder().encode(Entry(value: value, savedAt: .now))
-            try data.write(to: fileURL(forKey: key))
+            try data.write(to: fileURL(forKey: key), options: .atomic)
         } catch {
             // A failed cache write only costs a future network call.
             logger.error("Cache write failed for \(key): \(error)")
