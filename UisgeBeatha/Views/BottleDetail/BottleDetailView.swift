@@ -3,8 +3,8 @@ import PhotosUI
 import SwiftData
 import SwiftUI
 
-/// Bottle detail (PRD F5): hero photo, facts grid, distillery card
-/// (arrives in Phase 6), rating, tasting notes.
+/// Bottle detail (PRD F5): hero photo, facts grid, distillery card,
+/// rating, tasting notes.
 struct BottleDetailView: View {
     @Bindable var bottle: Bottle
 
@@ -13,6 +13,7 @@ struct BottleDetailView: View {
     @Environment(\.distilleryStore) private var distilleryStore
     @Environment(\.stockPhotoBackfill) private var stockPhotoBackfill
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var showingEditForm = false
     @State private var showingDeleteConfirm = false
@@ -188,7 +189,7 @@ struct BottleDetailView: View {
                     .font(.title2.weight(Theme.Weight.emphasis))
                     .multilineTextAlignment(.center)
                     .minimumScaleFactor(0.6)
-                    .foregroundStyle(RegionCatalog.region(id: bottle.region)?.accentColor ?? .secondary)
+                    .foregroundStyle(RegionCatalog.region(id: bottle.region)?.textColor ?? .secondary)
                     .padding(24)
             }
     }
@@ -222,44 +223,12 @@ struct BottleDetailView: View {
 
     private var photoButtons: some View {
         VStack(spacing: 8) {
-            HStack(spacing: 12) {
-                if UIImagePickerController.isSourceTypeAvailable(.camera) {
-                    Button(Strings.Detail.takePhoto, systemImage: "camera") {
-                        showingCamera = true
-                    }
-                    .buttonStyle(.bordered)
-                }
-                PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                    Label(Strings.Detail.choosePhoto, systemImage: "photo.on.rectangle")
-                }
-                .buttonStyle(.bordered)
-                Button {
-                    // A person pressing this again clearly wants a fresh
-                    // attempt, not the same cached hit or miss re-served.
-                    stockPhotoBackfill?.fetch(
-                        for: bottle, modelContext: modelContext,
-                        distilleryWikipediaTitle: distilleryStore.exactMatch(bottle.distilleryName)?.wikipediaTitle,
-                        bypassCache: true
-                    )
-                } label: {
-                    if isSearchingStockPhoto {
-                        ProgressView()
-                    } else {
-                        Image(systemName: "magnifyingglass")
-                    }
-                }
-                .buttonStyle(.bordered)
-                .disabled(isSearchingStockPhoto)
-                .accessibilityLabel(Strings.Detail.lookUpPhoto)
-                if bottle.userPhotoFilename != nil {
-                    Button(role: .destructive) {
-                        removePhoto()
-                    } label: {
-                        Image(systemName: "trash")
-                    }
-                    .buttonStyle(.bordered)
-                    .accessibilityLabel(Strings.Detail.removePhoto)
-                }
+            // One row when it fits, stacked when it doesn't: at large
+            // Dynamic Type sizes or on a narrow screen (the iPhone Duo's
+            // cover display) four buttons in a fixed row ran off the edge.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) { photoButtonItems }
+                VStack(spacing: 8) { photoButtonItems }
             }
             if isSearchingStockPhoto {
                 // Also covers the automatic backfill kicked off right after
@@ -276,10 +245,53 @@ struct BottleDetailView: View {
         }
     }
 
+    @ViewBuilder
+    private var photoButtonItems: some View {
+        if UIImagePickerController.isSourceTypeAvailable(.camera) {
+            Button(Strings.Detail.takePhoto, systemImage: "camera") {
+                showingCamera = true
+            }
+            .buttonStyle(.bordered)
+        }
+        PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+            Label(Strings.Detail.choosePhoto, systemImage: "photo.on.rectangle")
+        }
+        .buttonStyle(.bordered)
+        Button {
+            // A person pressing this again clearly wants a fresh
+            // attempt, not the same cached hit or miss re-served.
+            stockPhotoBackfill?.fetch(
+                for: bottle, modelContext: modelContext,
+                distilleryWikipediaTitle: distilleryStore.exactMatch(bottle.distilleryName)?.wikipediaTitle,
+                bypassCache: true
+            )
+        } label: {
+            if isSearchingStockPhoto {
+                ProgressView()
+            } else {
+                Image(systemName: "magnifyingglass")
+            }
+        }
+        .buttonStyle(.bordered)
+        .disabled(isSearchingStockPhoto)
+        .accessibilityLabel(Strings.Detail.lookUpPhoto)
+        if bottle.userPhotoFilename != nil {
+            Button(role: .destructive) {
+                removePhoto()
+            } label: {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.bordered)
+            .accessibilityLabel(Strings.Detail.removePhoto)
+        }
+    }
+
     // MARK: - Facts
 
     private var factsGrid: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
+        // Single column at accessibility sizes: two columns of large type
+        // truncate or wrap values like cask types into unreadable slivers.
+        LazyVGrid(columns: factColumns, spacing: 16) {
             factCell(Strings.Detail.distillery, bottle.distilleryName)
             factCell(
                 Strings.Detail.region,
@@ -300,6 +312,12 @@ struct BottleDetailView: View {
             factCell(Strings.Detail.added, bottle.dateAdded.formatted(date: .abbreviated, time: .omitted))
         }
         .cardBackground()
+    }
+
+    private var factColumns: [GridItem] {
+        dynamicTypeSize.isAccessibilitySize
+            ? [GridItem(.flexible())]
+            : [GridItem(.flexible()), GridItem(.flexible())]
     }
 
     private func factCell(_ label: String, _ value: String) -> some View {

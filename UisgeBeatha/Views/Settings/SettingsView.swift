@@ -46,9 +46,13 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                #if DEBUG
+                // Developer diagnostics only; never shipped in a release
+                // build.
                 Section(Strings.Settings.debugSection) {
                     LabeledContent(Strings.Settings.lastLookupSource, value: lastLookupSource)
                 }
+                #endif
             }
             .navigationTitle(Strings.Settings.title)
             .onAppear(perform: regenerateExports)
@@ -62,11 +66,11 @@ struct SettingsView: View {
         let directory = FileManager.default.temporaryDirectory
         do {
             let jsonURL = directory.appendingPathComponent("UisgeBeatha-Collection.json")
-            try ExportService.jsonData(from: sorted).write(to: jsonURL)
+            try ExportService.jsonData(from: sorted).write(to: jsonURL, options: .atomic)
             jsonFileURL = jsonURL
 
             let csvURL = directory.appendingPathComponent("UisgeBeatha-Collection.csv")
-            try Data(ExportService.csv(from: sorted).utf8).write(to: csvURL)
+            try Data(ExportService.csv(from: sorted).utf8).write(to: csvURL, options: .atomic)
             csvFileURL = csvURL
         } catch {
             Self.logger.error("Export generation failed: \(error)")

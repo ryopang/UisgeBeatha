@@ -404,7 +404,6 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Uisge Beatha";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Uisge Beatha uses the camera to scan bottle barcodes and photograph your bottles.";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Uisge Beatha saves bottle photos you take to your photo library.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -440,7 +439,6 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Uisge Beatha";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Uisge Beatha uses the camera to scan bottle barcodes and photograph your bottles.";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Uisge Beatha saves bottle photos you take to your photo library.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

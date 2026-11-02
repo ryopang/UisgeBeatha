@@ -10,7 +10,7 @@ struct RegionTagView: View {
                 .font(.caption.weight(Theme.Weight.emphasis))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
-                .foregroundStyle(region.accentColor)
+                .foregroundStyle(region.textColor)
                 .background(region.accentColor.opacity(0.16), in: Capsule())
         }
     }

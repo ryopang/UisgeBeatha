@@ -9,6 +9,10 @@ nonisolated enum Strings {
         static let name = "Uisge Beatha"
     }
 
+    enum Common {
+        static let done = "Done"
+    }
+
     enum Tabs {
         static let collection = "Collection"
         static let scan = "Scan"

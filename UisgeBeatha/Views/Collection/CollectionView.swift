@@ -2,8 +2,8 @@ import OSLog
 import SwiftData
 import SwiftUI
 
-/// The collection tab: searchable, sortable bottle list.
-/// (The List | Map toggle arrives in Phase 5.)
+/// The collection tab: searchable, sortable bottle list, or the region map
+/// (List | Map toggle in the toolbar).
 struct CollectionView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var bottles: [Bottle]

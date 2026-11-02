@@ -1,310 +1,400 @@
 # Uisge Beatha: Scotch Whisky Collection App
-## PRD and Build Plan for Claude Code
+## PRD v2.0 and Build Plan
 
-Version 1.0 | July 2026 | Owner: Ryo
+Version 2.0 · November 2026 · Owner: Ryo
+Supersedes v1.0 (July 2026, archived at `docs/archive/uisge-beatha-prd-v1.md`). Audit that drove this revision: `docs/audit-2026-11.md`.
 
 ---
 
 ## 1. What this is
 
-A personal iOS app to track a scotch whisky collection. Scan a bottle's barcode to look it up and add it to the library, browse the collection as a sortable list or a Scotland region map, and record tasting notes with photos and ratings per bottle.
+A personal scotch whisky collection app for iPhone, built to ship on the App Store. Scan a bottle's barcode or label to add it, browse the collection as a list or a Scotland region map, and record ratings, photos and tasting notes. Everything stays on device, with private iCloud sync across the owner's devices.
 
-This is a beta for personal use. Design assumptions: single user per device, under 100 bottles, no server, no accounts, zero recurring cost.
+v1.0 proved the core loop. v2.0 makes it a product:
 
-## 2. Locked decisions (do not revisit during build)
+1. **Great on every iPhone, including the iPhone Duo.** Adaptive layouts that use the Duo's 7.6" inner display properly, and still work on its 5.4" outer display, regular iPhones and 50/50 Split View.
+2. **Private sync.** SwiftData + CloudKit private database. "Login" is the person's Apple ID, so there are no accounts to build.
+3. **Smarter, still private, identification.** Apple's on-device Foundation Models improve label and lookup parsing. No server, no API keys, no recurring cost.
+4. **App Store ready.** Privacy, review, accessibility and performance bars met.
 
-| Decision | Choice | Why |
+Design assumptions: single user per Apple ID, up to about 500 bottles, no server, no developer-side data collection, zero recurring cost beyond the developer program.
+
+## 2. What changed from v1 (decision log)
+
+| Topic | v1 decision | v2 decision | Why |
+|---|---|---|---|
+| Signing / distribution | Free Apple ID, 7-day re-sign | **Paid developer program (already held). TestFlight, then App Store.** | Owner already has a paid account and a published app. |
+| Storage | SwiftData, local only | **SwiftData + CloudKit private database** | The schema was built CloudKit-compatible in v1 for exactly this. |
+| Photos | Files on disk via `LocalImageStore` | **Synced `BottlePhoto` model with external storage, behind the same `ImageStore` protocol** | Files on disk don't sync. |
+| Stock photos | Remote URL hotlinked on every view | **Downloaded once, stored like a user photo, source URL kept for attribution** | Offline, link rot, privacy, sync. |
+| Devices | iPhone only, single column | **iPhone + iPhone Duo, size-class adaptive. iPad comes nearly free but isn't a launch target.** | Duo launched October 2026. |
+| Identification | Heuristic parser + free APIs | **Same, plus on-device Foundation Models as an enhancer, gated by measured accuracy** | Owner chose on-device AI only, no paid cloud. |
+| UPCitemdb trial tier | Kept | **Keep only if its terms allow production use. Otherwise remove.** | It's an evaluation endpoint. |
+| Toolchain | Xcode 26, iOS 26 SDK | **Xcode 27, iOS 27 SDK. Minimum iOS stays 26.0.** | The iOS 27 SDK is required for full-screen Duo. Everything v2 needs exists on iOS 26. |
+| Design doc | `DESIGN.md` (Apple marketing web spec) | **§8 of this PRD is the design system.** `DESIGN.md` gets replaced or deleted. | The web spec contradicts the app (blue vs amber, px vs Dynamic Type). |
+| Stats dashboard | v1.1 roadmap | Still roadmap (§13), after release | Keep v2 focused. |
+
+## 3. Locked decisions (do not revisit during the v2 build)
+
+| Decision | Choice |
+|---|---|
+| Platform | Swift 6 language mode, SwiftUI, SwiftData, Xcode 27 / iOS 27 SDK, **minimum iOS 26.0** |
+| Default isolation | `MainActor` stays the project default. Heavy work is explicitly `nonisolated` or in an actor. |
+| Dependencies | Zero third-party packages |
+| Backend | None. CloudKit private DB is the only remote store and is Apple-operated. |
+| Sync | `ModelConfiguration(cloudKitDatabase: .private("iCloud.com.ryo.UisgeBeatha"))` |
+| AI | Apple Foundation Models, **on-device system model only**. iOS 27 lets the framework call cloud providers too; that's explicitly out of scope. |
+| Scope | Scotch only (the `CollectionPolicy` gate stays) |
+| Language | English only. Every string stays in `Strings.swift`. Always "Whisky", never "Whiskey". |
+| Regions | The six: Highland, Lowland, Islay, Speyside, Islands, Campbeltown, data-driven via `RegionCatalog` |
+| Accessibility | WCAG AA contrast, 44pt targets, full Dynamic Type including accessibility sizes, VoiceOver, Reduce Motion |
+
+## 4. Target devices and layout contract
+
+| Context | Size class (w × h) | Layout |
 |---|---|---|
-| Storage | SwiftData, local only, on device | Free Apple ID, no CloudKit entitlement available |
-| Signing | Free Apple ID personal team | Builds expire every 7 days; owner re-runs from Xcode weekly. Data survives re-signing |
-| Barcode lookup | Two-tier cascade: Open Food Facts, then UPCitemdb trial endpoint (both free, no key needed) | Best available free coverage. Misses still route to manual entry |
-| Lookup miss | Manual entry form, pre-filled with the scanned barcode | Chosen over paid AI lookup |
-| Reviews, US pricing, distillery news | Cut from v1 | No free API exists |
-| Distillery info | Wikipedia REST API summary + link out to full article | Free, reliable, covers every Scottish distillery |
-| Scope | Scotch only. Non-scotch scans are politely rejected | Owner decision |
-| Target | iPhone only, iOS 26, Xcode 26, Swift 6, SwiftUI | Latest design language (Liquid Glass) |
-| Dependencies | Zero third-party packages | VisionKit, MapKit, SwiftData, SwiftUI cover everything |
-| Sync, wishlist, stats dashboard | Out of scope for v1 | Keep it lean |
+| iPhone portrait (all sizes), Duo outer 5.4" | compact × regular | Single column, tab bar, push navigation. Today's design, tightened. |
+| iPhone landscape | compact × compact (regular width on Pro Max/Plus) | Single column; Pro Max landscape may show the split. Don't special-case device models. |
+| **Duo inner 7.6"** | **regular × regular** | **Two-column split** (§7) |
+| Duo inner, 50/50 Split View | likely compact width (Apple hasn't published this; test it) | Must fall back to single column cleanly |
+| iPad (bonus) | regular × regular | Same as the Duo inner display |
 
-## 3. Terminology rules (enforce in all UI strings)
+Rules:
 
-- Always "Whisky". Never "Whiskey".
-- Avoid plural forms entirely. Use "Collection", "Bottles", or "My Whisky" instead of "Whiskies".
-- English only. No localization scaffolding needed.
-- Regions, exactly these six: Highland, Lowland, Islay, Speyside, Islands, Campbeltown. (Note the correct spelling of Campbeltown. "Islands" is not an official SWA region but is a widely used sixth category; we use it.)
+1. Branch only on `horizontalSizeClass`, never on orientation, screen size or device model. Apple's Duo guidance says the inner display doesn't honor orientation like a normal iPhone.
+2. **Keep view identity stable across size-class changes.** Folding or unfolding mid-task must not discard a sheet, a half-filled form or a scan. Prefer `NavigationSplitView`, which collapses itself, over `if sizeClass == .regular { A } else { B }` around stateful views.
+3. Persist selection and view mode in `@SceneStorage`, so fold and unfold (and app relaunch) restore where the person was.
+4. No fixed widths or breakpoints. Size to content and let `ViewThatFits`, `Grid` and the split view do the work.
 
-## 4. Architecture
+## 5. Architecture
 
 ```
 UisgeBeatha/
-├── UisgeBeathaApp.swift                 App entry, ModelContainer setup
+├── App/            UisgeBeathaApp, AppContainer (ModelContainer + recovery), scene storage keys
 ├── Models/
-│   ├── Bottle.swift              @Model
-│   ├── TastingNote.swift         @Model
-│   ├── RegionCatalog.swift       Data-driven region definitions (see section 10)
-│   ├── CollectionPolicy.swift    The scotch-only gate, one injectable object
-│   └── Distillery.swift          Codable struct (seed data, not SwiftData)
+│   ├── Schema/     SchemaV1, SchemaV2 (VersionedSchema), MigrationPlan
+│   ├── Bottle, TastingNote, BottlePhoto (v2)
+│   ├── RegionCatalog, CollectionPolicy, Distillery, Expression
+├── Flows/          @Observable flow models: ScanFlow, BottleDraft, CollectionSelection
 ├── Services/
-│   ├── DistilleryStore.swift     Loads bundled distilleries.json, name matching
-│   ├── BarcodeLookupService.swift  Lookup cascade: OFF then UPCitemdb, with disk cache
-│   ├── WikipediaService.swift    Distillery summary client
-│   └── ExportService.swift       JSON + CSV export
-├── Views/
-│   ├── RootTabView.swift
-│   ├── Collection/               List view, Map view, toggle
-│   ├── Scan/                     Scanner + lookup result sheet
-│   ├── BottleDetail/             Detail, photo, tasting notes, wheel
-│   ├── AddEdit/                  Manual entry form
-│   └── Components/               TastingWheelView, RatingControl, etc.
-├── Resources/
-│   └── distilleries.json         Bundled seed data
-└── Support/
-    └── ImageStore.swift          Photo persistence helpers
+│   ├── Lookup/     BarcodeLookup cascade + tiers
+│   ├── Recognition/ VisionLabelOCRService, LabelParser (nonisolated), BottleExtractor (Foundation Models)
+│   ├── Media/      ImageStore protocol, SyncedImageStore (v2), LocalImageStore (migration source), StockPhotoImporter
+│   ├── Knowledge/  DistilleryStore, ExpressionStore, WikipediaService
+│   ├── Sync/       CloudSyncMonitor (account status, dedupe on remote change)
+│   └── Export/     ExportService (+ JSON import, v2.x)
+├── Support/        AppNetwork, Barcode, DiskCache, Strings, Theme
+└── Views/          Collection, Map, Detail, Scan, Form, Settings, Components
 ```
 
-Pattern: plain SwiftUI with @Observable view models where a view needs async work or non-trivial state. No MVVM ceremony for simple views. SwiftData @Query drives the collection views directly.
+Patterns:
 
-Swift 6 strict concurrency on. Services are actors or @MainActor-isolated as appropriate.
+- **Views stay thin.** Anything with branching flow or async work lives in an `@Observable` flow model that's unit-testable without UI. `ScanView` and `BottleFormView` are the first two to split.
+- **Protocol-first services**, injected through `@Entry` environment values, with DEBUG stubs selected by launch argument (as in v1).
+- **Concurrency:** UI and SwiftData on `MainActor`. ImageIO, Vision, parsing and Foundation Models calls are `nonisolated async` or actor-isolated. Pass value types (or `PersistentIdentifier`) across boundaries, never `@Model` instances.
+- **Networking:** everything goes through `AppNetwork.session` (12s/30s timeouts, one User-Agent). Every tier distinguishes "definitive miss" from "transport error" and only caches the former.
+- **Error surfaces:** quiet inline states, and an alert only for destructive or unrecoverable situations (unchanged from v1).
 
-## 5. Data model
+## 6. Data model v2
 
-### Region and RegionCatalog
-Bottle.region is stored as a String region ID (e.g. "islay"). Region definitions live in RegionCatalog, bundled data in the same spirit as distilleries.json: id, displayName, country, accent color, map centroid (lat/lon), one-line blurb. v1 ships exactly Scotland's six: highland, lowland, islay, speyside, islands, campbeltown.
+### 6.1 Versioning (must ship before any model change)
 
-Hard rule: every picker, tag, map badge, and sort comparator renders from the catalog. No view, view model, or service switches over hardcoded region cases. This single discipline is what makes the world whisky expansion in section 10 a data change instead of a rewrite.
+- `SchemaV1`: today's `Bottle` + `TastingNote`, unchanged. Shipped first as a no-op, so existing stores get a version stamp.
+- `SchemaV2`: adds `BottlePhoto` and the new optional fields below. A lightweight migration (new optional attributes and a new entity) plus a custom post-migration step that moves files from `LocalImageStore` into `BottlePhoto` rows and then deletes the files.
+- Container creation failure shows a recovery screen (export what's readable, then reset), never `fatalError`.
 
-### Bottle (@Model)
+### 6.2 CloudKit rules (carried from v1, still non-negotiable)
+
+No `@Attribute(.unique)`. Every attribute optional or defaulted. All relationships optional with explicit inverses. No deny delete rules. Duplicate detection is a fetch, plus a post-sync dedupe (§10).
+
+### 6.3 Changes
+
+**Bottle** (existing fields unchanged unless noted)
+
+| Field | Type | Change |
+|---|---|---|
+| barcode | String? | Stored canonical via `Barcode.normalized` (EAN-13 for UPC-A). Already done in this pass. |
+| purchasePrice | Decimal? | Verify CloudKit mirroring. If it's lossy, migrate to `priceMinorUnits: Int?`. |
+| stockPhotoURL | String? | Now attribution only (source page/URL), not loaded for display |
+| stockPhotoAttribution | String? | **New.** Author/license line for Commons images |
+| userPhotoFilename | String? | **Deprecated in V2.** Kept for migration, then unused. |
+| photos | [BottlePhoto]? | **New.** Relationship, cascade delete |
+| lastTastedDate | Date? | **New, optional.** Denormalized from notes for sort and search |
+
+**BottlePhoto** (new)
+
 | Field | Type | Notes |
 |---|---|---|
 | id | UUID | |
-| name | String | e.g. "Lagavulin 16" |
-| distilleryName | String | Denormalized string; matched against seed data when possible |
-| region | String | Region ID from RegionCatalog. Required, auto-filled when distillery matches seed data |
-| country | String | Default "Scotland". Not shown anywhere in v1 UI, exists for expansion |
-| barcode | String? | EAN-13 / UPC-A digits |
-| abv | Double? | Percent, e.g. 43.0 |
-| ageStatement | Int? | nil means NAS; display "NAS" when nil and user confirmed no age |
-| caskType | String? | Free text, e.g. "Ex-bourbon, PX finish" |
-| purchasePrice | Decimal? | |
-| currencyCode | String | Default "USD". Not shown in v1 UI |
-| purchaseDate | Date? | |
-| status | BottleStatus | enum: sealed, open, finished. Default sealed |
-| rating | Double? | 0.0 to 5.0 in 0.5 steps |
-| stockPhotoURL | String? | From Open Food Facts if the lookup returned one |
-| userPhotoFilename | String? | Photo stored as JPEG in Application Support, filename only in DB |
+| kind | String | `user` or `stock` (string for CloudKit friendliness) |
+| imageData | Data? | `@Attribute(.externalStorage)`, downsampled JPEG/HEIC, long edge 2000px |
+| thumbnailData | Data? | `@Attribute(.externalStorage)`, 300px |
 | dateAdded | Date | |
-| notes | [TastingNote] | Relationship, cascade delete |
+| bottle | Bottle? | Inverse of `Bottle.photos` |
 
-Photo storage: user photos are saved as downsampled JPEGs (max 2000px long edge, ~0.8 quality) to Application Support/Photos/. A 300px thumbnail is generated alongside. The DB stores filenames only. This keeps SwiftData fast and export files small. All photo access goes through an ImageStore protocol with a LocalImageStore implementation in v1, so a synced implementation can replace it later without touching views.
+The primary photo is the newest `user` photo, else the newest `stock` photo. One photo per kind in v2; the model allows a gallery later.
 
-Schema rules, CloudKit-forward (non-negotiable, they cost nothing now and prevent a painful migration when sync arrives):
-- No `@Attribute(.unique)` anywhere. CloudKit mirroring does not support unique constraints. Duplicate barcode detection is a fetch, not a constraint.
-- Every attribute is optional or has a default value.
-- All relationships are optional (`notes: [TastingNote]? `) with inverse relationships declared explicitly.
-- No deny-delete rules; deletion logic lives in code.
+**TastingNote:** unchanged. **Distillery / Expression seed data:** unchanged, bundled JSON.
 
-### TastingNote (@Model)
-| Field | Type |
+## 7. Features
+
+v1 features F1 to F8 stay as specified in the v1 PRD unless changed here.
+
+### F1 (revised): Scan and identify
+
+- Barcode lookup cascade unchanged: cache, then Open Food Facts, then UPCitemdb (subject to the terms check in §11), then the miss path. Input is always `Barcode.normalized`.
+- Live label scanning: the parse is throttled to about 4 Hz and runs off the main actor. The accepted frame is re-read with the tuned Vision recognizer (as in v1).
+- **New: Foundation Models enhancer** (§9). It runs after the heuristic parser, on both label OCR lines and barcode-lookup text (title + description). It may fill or correct fields only within the confidence rules in §9.
+- **New: cancel during lookup.** "Looking up…" gets a Cancel button. With 12s timeouts the worst case is about 25 seconds, which still deserves an exit.
+- **Duo inner display:** the scanner fills the leading area, and the result (lookup or label confirmation) appears in a trailing panel instead of a sheet, so the camera stays live for the next bottle. The compact layout keeps sheets.
+
+### F3/F4 (revised): Collection, list and map
+
+- **Compact:** today's behavior (List | Map toggle, push to detail).
+- **Regular (Duo inner):** `NavigationSplitView` with selection bound to `PersistentIdentifier`.
+  - **List mode:** sidebar = searchable, sortable list; detail = selected bottle, or a "Select a bottle" empty state with a scan shortcut.
+  - **Map mode:** sidebar = bottles in the selected region (all regions when none is selected, with a region filter chip); detail = the map. Choosing a bottle pushes its detail inside the detail column, with Back returning to the map.
+  - Deleting the selected bottle clears the selection instead of calling `dismiss()`.
+- Search gains tokens for region, status and cask type.
+- The map's zero-count badges use a contrast-safe token. Badges are already AA in this pass.
+
+### F5 (revised): Bottle detail
+
+- **Compact:** today's vertical layout.
+- **Regular:** two columns inside the detail pane. Hero photo plus facts on the leading side; rating, distillery card and tasting notes on the trailing side. Collapses to one column below about 600pt of available width (via `ViewThatFits`, not a breakpoint constant).
+- The hero photo uses `scaledToFit` on a neutral backdrop. Bottles are tall, and `scaledToFill` in a wide pane crops them.
+- Photo actions (Take, Choose, Find stock photo, Remove) move into a single menu on the hero in both layouts. This frees vertical space and fixes the crowded button row.
+- **Matched-geometry transition** from the list thumbnail to the hero (disabled under Reduce Motion).
+
+### F7 (revised): Tasting notes and wheel
+
+- Wheel descriptors become tappable. A tap inserts the descriptor into the focused note field. Label text scales with Dynamic Type, and an accessible list alternative sits behind a toggle.
+- **New: "Suggest words" (Foundation Models).** Takes what the person has typed and suggests descriptors from the wheel vocabulary (constrained output). Suggestions only, never auto-inserted.
+
+### F8 (revised): Settings
+
+- iCloud sync status (on, off, account unavailable) with a plain-language explanation.
+- Export (JSON / CSV). **New in v2.x: JSON import**, which matches the exports v1 already writes.
+- Privacy section: what leaves the device (barcodes and search terms to Open Food Facts, UPCitemdb and Wikimedia), and that iCloud data is private to the person.
+- The debug section is DEBUG-only (done).
+
+### F9 (new): System integration (v2.1)
+
+- **App Intents:** "Add a bottle", "Log a tasting", "Show my Islay bottles". These surface in Siri, Spotlight and Shortcuts.
+- **Spotlight:** index bottles as `IndexedEntity` so a search for "Lagavulin" finds the bottle.
+- Skipped: widgets and Live Activities (no recurring-glance use case yet).
+
+## 8. Design system (replaces DESIGN.md)
+
+**Direction:** "warm, quiet, tactile". Liquid Glass system chrome, content-first, one warm accent. It should feel like a well-made leather notebook, not a dashboard. Reference feel: Apple's Journal and Books apps.
+
+### 8.1 Color tokens
+
+| Token | Light | Dark | Use |
+|---|---|---|---|
+| `accent` | `#A75A17` (5.1:1 on white) | `#DE8230` | Tint, stars, status text, prominent buttons |
+| `onAccent` (prominent button text) | white | **near-black `#1A1206`** (white on `#DE8230` is only 2.9:1) | Text on accent fills |
+| Region `textColor` | base × 0.6 | base + 25% toward white | Region-colored text/glyphs. AA verified in the audit. |
+| Region tint | base at 16 to 18% | same | Tag/monogram backgrounds |
+| Region `badgeFillColor` | base × 0.6 | base × 0.6 | Solid fills behind white text |
+| Surfaces | system `.background`, `.secondary` | system | No custom grays |
+
+Rules: never put gray text on a colored fill. Region colors are for tags, badges and monograms only, never for large surfaces. No gradients.
+
+### 8.2 Typography
+
+System font only, text styles only (`.largeTitle` through `.caption2`), no fixed point sizes outside the tasting wheel and monograms (which scale with `@ScaledMetric`). Weight ladder: regular, semibold, bold (`.medium` unused, as in v1). Bottle names may use `.serif` design in the detail title only, if it tests well. Decide in Phase 5 with screenshots, not by default.
+
+### 8.3 Shape, spacing, elevation
+
+- Radii: inline 12, card 16, hero 24 (v1 `Theme.Radius`). Use `ConcentricRectangle` / container-relative shapes where iOS 26 provides them.
+- Spacing scale: 4, 8, 12, 16, 24, 32. Section spacing 24.
+- **No cards inside cards.** One shadow in the whole app (the hero photo).
+- 44pt minimum hit target everywhere, including icon-only menus.
+
+### 8.4 Motion
+
+Principles (Emil Kowalski's design-engineering guidance, applied to SwiftUI):
+
+- Motion explains a change; it doesn't decorate. If it doesn't help the person understand what happened, cut it.
+- Fast: 150 to 250ms for most transitions, springs with no visible overshoot (`.snappy`, `.smooth`). Never block input during an animation. Everything is interruptible.
+- No animation for keyboard-driven or very frequent actions.
+- Under Reduce Motion, replace movement with cross-fades. Never just remove the feedback.
+
+Concrete motion spec:
+
+| Moment | Treatment |
 |---|---|
-| id | UUID |
-| date | Date |
-| nose | String |
-| palate | String |
-| finish | String |
-| conclusion | String |
+| List thumbnail to detail hero | `matchedTransitionSource` / `.navigationTransition(.zoom)` |
+| Status cycle | `contentTransition(.numericText)`-style text swap plus a `symbolEffect(.bounce)` on the status glyph, selection haptic |
+| Rating change | Selection haptic (done), star `symbolEffect` on set |
+| Bottle added | Success haptic, toast slides from the top (existing pattern) |
+| Scan hit | Success haptic. The result panel/sheet appears with the default spring. |
+| Map badge tap | Scale 0.96 press state, sheet/panel presents |
 
-One bottle can have multiple notes over time, newest first.
+### 8.5 Anti-patterns (from pbakaus/impeccable, adapted)
 
-### Distillery seed data (bundled JSON, not SwiftData)
-~140 active Scottish malt distilleries. Each entry:
-```json
-{
-  "name": "Lagavulin",
-  "aliases": ["Lagavulin Distillery"],
-  "region": "islay",
-  "lat": 55.6365,
-  "lon": -6.1268,
-  "founded": 1816,
-  "owner": "Diageo",
-  "wikipediaTitle": "Lagavulin_distillery"
+No purple or blue gradients, no icon tile above every heading, no nested cards, no gray-on-color text, no cramped padding, no skipped heading levels (use proper `accessibilityHeading` on section titles), no generic "AI app" copy. Write copy the way a whisky shop owner would talk.
+
+### 8.6 App icon
+
+Rebuild the icon in **Icon Composer** as a layered `.icon` so it renders correctly in Liquid Glass light, dark, tinted and clear modes. The current flat PNG trio is a fallback only.
+
+## 9. On-device intelligence (Foundation Models)
+
+**Goal:** better field extraction from messy label OCR and terse barcode listings, at zero cost and with nothing leaving the device.
+
+**Availability:** `SystemLanguageModel.default.availability`. Only Apple Intelligence-capable iPhones, which includes every Duo. When it isn't available, the app behaves exactly like today. Never require it.
+
+**BottleExtractor:**
+
+```swift
+@Generable struct BottleFields {
+    @Guide(description: "Distillery name exactly as printed, or nil") var distillery: String?
+    @Guide(description: "Expression name without distillery or age, e.g. 'Double Cask'") var expression: String?
+    @Guide(description: "Age statement in years if printed", .range(3...60)) var ageYears: Int?
+    @Guide(description: "ABV percent if printed", .range(35...75)) var abvPercent: Double?
+    @Guide(description: "Cask or finish if printed") var cask: String?
+    @Guide(description: "true only if the text says Scotch or Scotland") var saysScotch: Bool?
 }
 ```
-Claude Code: generate this file from your knowledge of Scottish distilleries. Cover at minimum every distillery with bottles in common US retail (all Diageo, Pernod, Edrington, Beam Suntory, Bacardi, Whyte & Mackay, LVMH, Ian Macleod, and major independent distilleries). Accuracy of region assignment matters more than completeness. Mark the Islands distilleries (Talisker, Highland Park, Scapa, Jura, Tobermory, Arran, Raasay, Abhainn Dearg, Torabhaig, Lagg) as `islands`.
 
-DistilleryStore provides: exact match, case-insensitive contains match, and a simple fuzzy match (normalized Levenshtein or token overlap) for matching scanned product names like "LAGAVULIN 16YO ISLAY SINGLE MALT" to "Lagavulin".
+- Instructions: extract only what is printed, never infer from general knowledge, return nil when unsure.
+- Input: OCR lines (or lookup title + description). Output goes through **deterministic validation**: distillery must resolve via `DistilleryStore` (else ignored or offered as an alternate), and age/ABV must pass the existing `WhiskyLabelParser` range checks.
+- **Merge rule:** heuristic `confident` fields win. The model may fill `none` fields and break ties between `guessed` alternates. A model-filled field shows as `guessed` in the confirmation UI.
+- **Release gate:** run the existing real-photo accuracy corpus (`RealPhotoAccuracyTests`, about 96% today) with and without the extractor. Ship it only if accuracy improves and nothing regresses. Add 20+ new fixtures from real bottles, including tricky independents.
+- Latency budget: under 1.5s after the person taps "Use This Label". Prewarm the session when label mode opens.
 
-## 6. Features
+Other uses, in priority order: tasting-word suggestions (F7), the scotch gate when category tags are empty (classification, never a hard reject on its own), and natural-language collection search ("peated under $100", v2.x).
 
-### F1: Barcode scan and lookup
-- Scan tab or prominent scan button opens VisionKit `DataScannerViewController` configured for EAN-13 and UPC-A.
-- On capture, run the lookup cascade. Stop at the first tier that returns a usable product name.
-  - Tier 1, Open Food Facts (free, no key, no meaningful limit):
-    `GET https://world.openfoodfacts.org/api/v2/product/{barcode}.json?fields=product_name,brands,image_url,alcohol_by_volume,categories_tags`
-    Set a custom User-Agent per OFF etiquette: `UisgeBeatha/1.0 (personal iOS app)`.
-  - Tier 2, UPCitemdb trial endpoint (free, no key, 100 lookups/day per IP, burst limit ~6/min):
-    `GET https://api.upcitemdb.com/prod/trial/lookup?upc={barcode}`
-    Use `items[0]`: title, brand, images array. On HTTP 429, skip silently to the miss path.
-  - Normalize whichever tier hits into a single LookupResult struct (name, brand, imageURL, abv?, categoryTags) before any UI sees it. Log which tier answered, visible in a debug setting.
-  - Cache every cascade outcome (hit or miss) on disk keyed by barcode, 90-day expiry, so rescans and duplicate checks cost no network calls.
-  - Optional Tier 3, disabled by default behind a build flag: web search on the raw EAN via a search API to recover a product name when both databases miss. Not wired to any provider in v1; the protocol should make adding one a single conformance.
-- Hit path: show a Lookup Result sheet with product name, brand, stock image, ABV if present, and the matched distillery + region (via DistilleryStore fuzzy match on product_name and brands). Two actions: "Add to Collection" (opens the entry form pre-filled for confirmation) and "Details Only" (read-only view, nothing saved).
-- Scotch gate:
-  - If categories clearly indicate non-scotch (bourbon, irish, japanese, canadian, rye, tennessee, vodka, gin, rum, wine, beer tags), show a friendly rejection: "This one isn't a Scotch whisky. Uisge Beatha tracks Scotch only for now." No add path.
-  - If ambiguous (no category data, no distillery match), do NOT reject. Fall through to the manual form pre-filled with whatever came back. Free databases are too sparse to trust a hard reject on missing data.
-- Miss path (404 or no product): go straight to the manual entry form with the barcode field pre-filled and a one-line notice: "Not found in the database. Add it manually and it's saved for good."
-- Duplicate handling: if the barcode already exists in the library, jump to that bottle's detail instead of adding a duplicate, with a toast "Already in your collection."
+## 10. Sync (CloudKit)
 
-### F2: Manual entry / edit form
-Fields: name (required), distillery (required, autocomplete against seed data; picking a match auto-fills region), region (required, auto-filled but editable, segmented or menu picker of the six regions), ABV, age statement (with an NAS toggle), cask type, purchase price, purchase date, status, barcode (read-only if it came from a scan).
-Same form is reused for editing. Validation: name and distillery non-empty, region selected.
+- Capabilities: iCloud (CloudKit) with container `iCloud.com.ryo.UisgeBeatha`, plus Background Modes, remote notifications.
+- Development: run once with `initializeCloudKitSchema` (or let SwiftData create the schema). **Deploy the schema to Production in the CloudKit Console before every TestFlight/App Store build that changes models.** This is the most common shipped-sync failure.
+- Account states: signed out, restricted, temporarily unavailable. The app keeps working locally and Settings explains the state.
+- **Dedupe:** on `NSPersistentStoreRemoteChange`, find bottles sharing a canonical barcode and merge them (keep the oldest, move notes and photos, delete the rest). Unit-test the merge function as pure logic.
+- Photos sync through `BottlePhoto` external storage. Test the first sync of a large library over cellular.
+- Export/import remains the escape hatch, independent of iCloud.
 
-### F3: Collection, list view
-- Default view. Rows show thumbnail (user photo, else stock photo, else a region-colored monogram placeholder), name, distillery, region tag, status pill, rating stars.
-- Sortable by: name, distillery, region. Sort control in toolbar. Persist last sort choice.
-- Search bar filters on name and distillery.
-- Swipe actions: change status, delete (with confirmation).
-- Empty state: friendly illustration-free message + "Scan your first bottle" button.
+## 11. Non-functional requirements
 
-### F4: Collection, map view
-- A toggle (top segmented control: List | Map) switches views. Persist last choice.
-- MapKit map framed on Scotland (roughly center 57.2N, -4.5W, span covering Campbeltown to Orkney).
-- One annotation per region at its centroid: a glass-material badge showing the region name and bottle count. Regions with zero bottles render dimmed.
-- Tapping a badge presents a sheet listing that region's bottles; tapping a bottle pushes its detail.
-- Do not attempt polygon overlays of region boundaries in v1. Centroid badges only.
+**Performance (measured with Instruments on the owner's device)**
+- Cold launch to interactive list in under 1.0s with 300 bottles.
+- 120Hz list scrolling with 300 bottles and thumbnails. No main-thread disk or ImageIO work in `body`.
+- Applying a 12MP photo causes no main-thread hitch over 50ms (ImageStore off main).
+- Live label mode holds 60fps camera preview while parsing (throttled, off main).
 
-### F5: Bottle detail
-Layout, top to bottom:
-1. Hero photo: user photo if present, else stock photo loaded from stockPhotoURL (AsyncImage with cache), else placeholder. Buttons: "Take Photo" (camera) and "Choose Photo" (PhotosPicker). Retake replaces.
-2. Facts grid: distillery, region, ABV, age, cask type, status (tappable to cycle), purchase price and date, date added.
-3. Distillery card: Wikipedia summary (see F6).
-4. Rating: 0 to 5 stars in half steps, large tappable control.
-5. Tasting notes section (see F7).
-6. Edit and Delete in toolbar menu.
+**Accessibility**
+- WCAG AA contrast for all text, 3:1 for non-text UI. Verified with the Accessibility Inspector in both appearances.
+- Full Dynamic Type, including AX5, on every screen in both size classes.
+- VoiceOver labels, rotor-friendly headings, adjustable rating. Reduce Motion and Reduce Transparency respected.
+- 44pt targets.
 
-### F6: Distillery info (Wikipedia)
-- `GET https://en.wikipedia.org/api/rest_v1/page/summary/{wikipediaTitle}` using the title from seed data; if the distillery isn't in seed data, try `{distilleryName}_distillery` then `{distilleryName}`.
-- Show: thumbnail, extract (first ~4 sentences), founded year and owner from seed data, and a "Read more on Wikipedia" link that opens SFSafariViewController.
-- Cache responses on disk keyed by title, 30-day expiry. Offline or failure: show seed-data facts only, no error banner.
+**Privacy and security**
+- No tracking, no analytics SDKs, no developer-side collection. Privacy manifest present (done).
+- Only canonical barcodes and search strings go to third parties. No identifiers.
+- No secrets in the binary (none needed).
 
-### F7: Tasting notes and wheel
-- "New Tasting Note" opens an editor with four multiline fields: Nose, Palate, Finish, Conclusion. Date defaults to now, editable.
-- A "Flavour Wheel" button in the editor opens a reference sheet with an original tasting wheel rendered natively in SwiftUI (Canvas or SVG-like Path drawing). Do NOT bundle any wheel image from the internet; the well-known scotch wheels are copyrighted.
-- Wheel spec: two rings. Inner ring, 8 categories: Smoky, Fruity, Floral, Malty, Woody, Spicy, Sweet, Maritime. Outer ring, 3 descriptors per category (e.g. Smoky: peat, bonfire, medicinal; Fruity: orchard, citrus, dried fruit; etc. Claude Code picks sensible descriptors). Category colors work in both light and dark mode. The wheel is reference-only in v1; segments are not tappable inputs.
-- Notes display on the bottle detail as cards, newest first, with relative dates.
+**Quality**
+- Strict concurrency, warning-free, no force unwraps outside tests.
+- Unit tests for every flow model and pure function. UI tests for the key flows in both compact and regular width (iPhone 17 Pro simulator plus an iPhone Duo or iPad simulator).
+- CI: an Xcode Cloud workflow on every PR (build + unit tests) and nightly UI tests.
 
-### F8: Settings
-- Export Collection: JSON (full fidelity) and CSV (flat, one row per bottle, notes concatenated). Share via ShareLink. Photos are not included in exports in v1; note this in the UI.
-- About: app version, data stays on device notice.
-- (No import in v1.)
+## 12. App Store readiness checklist
 
-## 7. Design direction
+- [ ] Name check: "Uisge Beatha" availability in App Store Connect
+- [ ] Privacy policy URL (a GitHub Pages page is fine): what goes to OFF/UPCitemdb/Wikimedia, iCloud private storage, no collection
+- [ ] App Privacy label: Data Not Collected
+- [ ] Age rating questionnaire: alcohol references. Expect a high rating under Apple's current age-rating tiers. Metadata must not encourage consumption.
+- [ ] UPCitemdb: confirm the trial endpoint's terms permit production use. Otherwise remove the tier before release.
+- [ ] Wikimedia Commons attribution displayed for Commons-sourced photos
+- [ ] Screenshots: 6.9" iPhone plus the iPhone Duo sizes App Store Connect requires (and iPad if `TARGETED_DEVICE_FAMILY` keeps iPad)
+- [ ] Icon Composer icon
+- [ ] Support URL
+- [ ] TestFlight beta with 10 to 50 testers, including at least 2 Duo owners
+- [ ] CloudKit schema deployed to Production
 
-- iOS 26 Liquid Glass design language: system materials, glass tab bar and toolbars, concentric corner radii, let content flow under bars. Use system components before custom ones.
-- Minimal and stylish: generous whitespace, SF Pro (system fonts only), one accent color (deep amber, roughly #C46A1B, tuned separately for dark mode), plus the six region colors used only for tags, map badges, and placeholder monograms.
-- Full light and dark mode support. Verify every screen in both. Photos and the tasting wheel must sit well on both backgrounds.
-- Navigation: TabView with two tabs, Collection and Settings, plus a prominent center Scan action (raised circular button or a Scan tab, whichever fits Liquid Glass tab bar conventions in iOS 26 best).
-- Reference apps for feel: Apple's own Journal and Fitness apps for card layouts and materials; Vivino/Untappd only for information hierarchy on the detail page, not their visual style.
+## 13. Build plan
 
-## 8. Non-functional requirements
+Execute in order. Each phase ends with its acceptance criteria met, a green CI run, and an on-device check where noted.
 
-Performance
-- Cold launch to interactive collection list under 1 second on the owner's device.
-- List scrolling at 120 Hz with 100 bottles and photos: use thumbnails in rows, never full-size images; lazy stacks; downsample on import with ImageIO.
-- All network calls async, never block UI, everything usable offline except lookup and Wikipedia.
+### Phase 0: Toolchain and verification of the audit fixes (half a day)
 
-Accessibility
-- Full Dynamic Type support including accessibility sizes (rows reflow, no truncation of names).
-- VoiceOver labels on all controls; rating control announces "3 and a half stars, adjustable" and supports swipe adjust.
-- Minimum 44pt touch targets. Respect Reduce Motion (disable any springy hero transitions). Contrast-check region colors in both modes.
+- Open in Xcode 27, set the iOS 27 SDK (deployment target stays 26.0), bump to 2.0 (build 1).
+- Build warning-free. **The audit fixes were written without a compiler**, so fix anything that doesn't compile first.
+- Run unit and UI tests.
+- Add an Xcode Cloud workflow.
+- Decide on `DESIGN.md` (replace with §8 or delete).
+- **Acceptance:** green build and tests. The on-device checklist in the audit (§"Must verify on a physical device") passes.
 
-Quality bars
-- No third-party dependencies. No force unwraps in non-test code. Errors surface as quiet inline states, never blocking alerts unless destructive.
+### Phase 1: Foundations (2 to 3 days)
 
-## 9. Build plan (execute in order, verify each phase before the next)
+- `SchemaV1` + `MigrationPlan` (no shape change) and the container recovery screen.
+- `ImageStore` becomes `nonisolated async`. Thumbnail `NSCache` with async row loading.
+- Live label parse: throttle plus off-main. `LabelParser`, `DistilleryStore` and `ExpressionStore` become `nonisolated`.
+- Extract the `ScanFlow` and `BottleDraft` flow models, with tests.
+- Cancel during lookup.
+- **Acceptance:** an existing v1 store opens. The Instruments main-thread trace shows no ImageIO or parse work during photo apply and live label mode. Flow model tests pass.
 
-Phase 0: Project shell (owner does this by hand, 10 minutes)
-1. Xcode 26 > New Project > iOS App. Product name: UisgeBeatha (no space, this becomes the module name). Interface: SwiftUI. Language: Swift. Storage: none (SwiftData added in code). Then in the target's General settings set Display Name to "Uisge Beatha", which is what appears under the icon.
-2. Signing: Personal Team (free Apple ID). Bundle ID: com.ryo.uisgebeatha. Deployment target: iOS 26.
-3. Add camera usage description to Info: NSCameraUsageDescription "Uisge Beatha uses the camera to scan bottle barcodes and photograph your bottles." Add NSPhotoLibraryAddUsageDescription similarly.
-4. Run the empty app on the physical iPhone once to confirm signing works. Camera and scanning cannot be tested in the simulator.
-5. Hand the project folder to Claude Code.
+### Phase 2: Adaptive layout for iPhone + Duo (3 to 4 days)
 
-Phase 1: Models and seed data
-- Bottle, TastingNote, BottleStatus, RegionCatalog, CollectionPolicy. ModelContainer in UisgeBeathaApp, schema following the CloudKit-forward rules in section 5.
-- Generate Resources/distilleries.json and DistilleryStore with matching functions.
-- Acceptance: unit tests pass for seed loading (count > 120, all six regions present, known spot checks: Lagavulin=islay, Glenfarclas=speyside, Springbank=campbeltown, Talisker=islands), and for fuzzy matching ("LAGAVULIN 16 YEARS" resolves to Lagavulin).
+- `NavigationSplitView` collection (list mode and map mode) with `@SceneStorage` selection.
+- Two-column detail in regular width. Hero `scaledToFit`. Photo actions menu.
+- Scan with a trailing result panel in regular width.
+- Fold/unfold continuity: no lost sheets, forms or scans.
+- **Acceptance:** every screen verified on an iPhone 17 Pro sim, an iPhone Duo sim (both displays), 50/50 Split View, and the iPad sim; in both appearances; at default and AX5 type sizes. Fold mid-form keeps the draft. Fold mid-scan returns to scanning. On-device Duo check if available.
 
-Phase 2: Collection list + manual entry
-- RootTabView, list view with sort/search/swipe actions, add/edit form with distillery autocomplete and region auto-fill, delete with cascade.
-- Acceptance: add 5 bottles manually, sort by all three keys, search works, edit persists, delete removes notes too, empty state shows on fresh install.
+### Phase 3: Sync and photos (3 to 4 days)
 
-Phase 3: Bottle detail, photos, rating, tasting notes, wheel
-- Detail layout, camera + photo picker with downsampling and thumbnail generation, ImageStore, half-star rating control, tasting note CRUD, SwiftUI tasting wheel sheet.
-- Acceptance: photo capture persists across app relaunch, replacing a photo deletes the old files, rating adjustable via tap and VoiceOver, two notes on one bottle display newest first, wheel renders correctly in light and dark.
+- iCloud capability, CloudKit container, `SchemaV2` with `BottlePhoto`, file-to-model migrator.
+- `StockPhotoImporter` (download once, attribution) replacing hotlinks. Migrate existing `stockPhotoURL` bottles on first launch, best effort.
+- Sync status in Settings, dedupe on remote change, updated privacy copy.
+- **Acceptance:** two devices on one Apple ID converge (add, edit, delete, photos, notes) within a minute online. Offline edits merge. A duplicate barcode added on both devices merges to one bottle. Migration from a v1 store with photos is lossless.
 
-Phase 4: Scan and lookup
-- VisionKit scanner, BarcodeLookupService cascade (OFF then UPCitemdb) with disk cache, lookup result sheet, scotch gate, miss path into pre-filled manual form, duplicate detection, stock photo URL persistence.
-- Acceptance: a known-good barcode (test with a Glenlivet or Glenfiddich bottle) shows the result sheet and adds correctly; a bottle absent from OFF but present in UPCitemdb resolves via tier 2 (verify with the debug tier log); a nonsense barcode routes to the manual form with barcode pre-filled; rescanning the same barcode answers from cache with no network call; scanning an existing bottle's barcode jumps to its detail.
+### Phase 4: On-device intelligence (2 to 3 days)
 
-Phase 5: Map view
-- Segmented toggle, MapKit Scotland framing, centroid count badges, region sheet with filtered list.
-- Acceptance: counts match the library, zero-count regions dimmed, tapping badge > bottle > detail navigation works, toggle choice persists.
+- `BottleExtractor` with validation and the merge rule. Prewarm.
+- Accuracy harness comparing heuristic vs heuristic + model on the corpus. Add 20+ fixtures.
+- Tasting "Suggest words" and the tappable wheel.
+- **Acceptance:** corpus accuracy improves with zero regressions on existing fixtures. p95 extraction latency under 1.5s on the owner's iPhone. With the model unavailable, behavior is identical to Phase 3.
 
-Phase 6: Wikipedia, export, polish
-- WikipediaService with disk cache, distillery card on detail, SFSafariViewController link out, JSON/CSV export with ShareLink, full dark mode audit, Dynamic Type audit, accessibility pass, app icon (simple glass/amber motif, generated as an asset).
-- Acceptance: distillery card shows for a seed-data distillery and degrades gracefully offline; exported JSON re-parses and CSV opens in Numbers; every screen checked in dark mode and at XXL type size.
+### Phase 5: Design polish and motion (2 days)
 
-## 10. Scale path: v1 decisions that protect future versions
+- Apply §8 tokens (`onAccent` in dark mode, map zero-count token, heading traits).
+- Motion spec, haptics, Reduce Motion variants.
+- Icon Composer icon.
+- Copy pass, empty states. Search tokens.
+- **Acceptance:** design review against §8 with screenshots of every screen in both size classes and appearances. Accessibility Inspector audit clean.
 
-The owner intends to release on the App Store if the app proves useful, then add accounts/sync, expand beyond Scotch, and add a stats dashboard. v1 does not build any of that, but v1 must not block any of it.
+### Phase 6: Release (1 to 2 days plus review time)
 
-### 10.1 Architectural commitments in v1 (build these now)
-1. CloudKit-compatible SwiftData schema per the rules in section 5. This is the single highest-leverage item on this list.
-2. `country` and `currencyCode` fields exist on Bottle with defaults, invisible in v1 UI, present in exports.
-3. RegionCatalog is data, not code. Adding Irish, Japanese, Taiwanese, or American regions later means adding catalog entries and per-country distillery/producer seed files, not editing views.
-4. CollectionPolicy owns the scotch gate. It is one injectable object holding an allowed-country set (v1: Scotland only) and the rejection copy. World whisky support means changing this object's data and nothing else in the scan flow.
-5. ImageStore is a protocol. v1 ships LocalImageStore (files on disk). Sync later means adding a store that keeps photo data in the model with `@Attribute(.externalStorage)` or CKAsset, behind the same interface.
-6. Every user-facing string lives in one Strings file. Not localization, just one place. This is also where the Whisky/Whiskey spelling rule gets enforced per country when non-Scotch arrives (bourbon is "whiskey").
-7. Network services (lookup cascade, Wikipedia) stay behind protocols, already specified.
-8. JSON export includes every field including country and currencyCode, so exports made today import cleanly into future versions.
+- Everything in §12. TestFlight beta for 2 weeks, fix findings, submit.
+- **Acceptance:** approved build live on the App Store.
 
-### 10.2 Before App Store release: acquire and change
-- Apple Developer Program, $99/yr. Kills the 7-day re-sign ritual (section 13 becomes obsolete), enables TestFlight and CloudKit.
-- Accounts and sync: use CloudKit private database via SwiftData's CloudKit mirroring (`ModelConfiguration` with `cloudKitDatabase: .automatic` plus the iCloud capability and a container). Because the schema followed the section 5 rules, this is a configuration change, not a migration. "Log in" is the user's Apple ID; their collection, notes, and photos follow them across devices with zero auth screens to build. Only build a real account system (Sign in with Apple plus a backend like Supabase) if non-Apple platforms or social features ever land on the roadmap; do not build it just for sync.
-- Photo sync: switch the active ImageStore to the synced implementation; write a one-time migrator that moves existing local files into it.
-- UPCitemdb: the keyless trial endpoint is rate-limited per client IP and intended for evaluation. Before public release, either move to a keyed plan or confirm current terms permit production use at expected volume. Open Food Facts stays fine with a proper User-Agent.
-- App Review package: privacy policy URL, App Privacy labels (with local-only or CloudKit private DB storage, the developer collects nothing), support URL, screenshots, marketing icon. Confirm the name "Uisge Beatha" is available on the App Store before committing to store assets. Expect a 17+ age rating because the app's subject is alcohol; the app must not glamorize consumption in store metadata.
-- Run the 50-user beta through TestFlight before the public listing.
+### Roadmap after 2.0 (not commitments)
 
-### 10.3 Roadmap sketch (not commitments)
-- v1.1: stats dashboard. Bottle count by region, total collection spend, average rating, sealed/open/finished breakdown, most-represented distillery. Computed entirely from existing fields; zero schema change, which is why nothing needs protecting for it.
-- v2.0: paid dev account, CloudKit sync, TestFlight beta, App Store release.
-- v2.5: world whisky. Extend RegionCatalog and seed data (Ireland, Japan, Taiwan, US, Canada), flip CollectionPolicy to the new country set, map view becomes country-scoped (a country picker above the map, Scotland framing preserved per country), spelling rules applied per country from the Strings file.
-- Parked further out: wishlist, import from export files, iPad layout, bottle sharing.
+- 2.1: App Intents + Spotlight (F9), JSON import, collection insights (count by region, spend, average rating, open/sealed). Computed from existing fields, zero schema change.
+- 2.5: world whisky (extend `RegionCatalog` and seed data, country-scoped map, flip `CollectionPolicy`). v1's data-driven design keeps this a data change.
+- Parked: wishlist, bottle sharing (CloudKit shared zones), Apple Watch.
 
-## 11. Out of scope for v1
-Everything in 10.3, plus reviews and US pricing (needs a paid API or AI lookup) and distillery news. Do not build speculative abstractions for these beyond what 10.1 lists.
+## 14. Risks and open questions
 
-## 12. Instructions block for Claude Code (paste as CLAUDE.md in the project root)
+| Risk | Mitigation |
+|---|---|
+| Audit fixes don't compile (written without Xcode) | Phase 0 exists for this. The changes are small and isolated. |
+| Duo 50/50 Split View size class undocumented | Size-class-driven layout handles either answer. Test it explicitly. |
+| CloudKit schema not deployed to Production | Checklist item. Add it to the release runbook. |
+| UPCitemdb terms disallow production use | Remove the tier. OFF + label OCR + Foundation Models cover most bottles. |
+| RESTBase `page/summary` deprecation | Wrapped behind `WikipediaServicing`. Swap to the Action API if it changes. |
+| Foundation Models adds latency or hallucinated fields | Validation layer, merge rule, accuracy gate, never required. |
+| Owner time | Phases are independent after Phase 1. Phase 2 (Duo) can ship before sync if needed. |
 
-```markdown
-# Uisge Beatha: project instructions
+**Open questions for the owner**
 
-You are building Uisge Beatha, a scotch whisky collection iPhone app. The full PRD is in uisge-beatha-prd-build-plan.md at the repo root. Read it before writing any code.
+1. Keep iPad in the build (nearly free after Phase 2, but needs iPad screenshots and review), or set the device family to iPhone only for 2.0?
+2. Is the App Store name "Uisge Beatha" available? If not, what's the fallback name?
+3. Price: free, paid up front, or free with a one-time unlock? This affects nothing in the architecture. Decide before Phase 6.
 
-Hard rules:
-- Swift 6, SwiftUI, SwiftData, iOS 26 minimum. Zero third-party dependencies.
-- Follow the build phases in the PRD in order. Complete the acceptance criteria for a phase before starting the next. Ask me to run on-device checks when a phase needs camera or maps verification.
-- The SwiftData schema must stay CloudKit-compatible: no unique constraints, every attribute optional or defaulted, all relationships optional with explicit inverses. Duplicate detection is a fetch, never a constraint.
-- Never switch over region cases in UI or logic. All region rendering reads RegionCatalog. The scotch-only rule lives in CollectionPolicy and nowhere else.
-- UI text: always "Whisky", never "Whiskey", avoid plural forms ("Collection" or "Bottles" instead). English only. All user-facing strings live in one Strings file.
-- v1 catalog: exactly six Scotland regions: Highland, Lowland, Islay, Speyside, Islands, Campbeltown.
-- Never bundle images downloaded from the internet. The tasting wheel is drawn in SwiftUI. The app icon is original.
-- No force unwraps outside tests. Strict concurrency clean. Build must compile warning-free before you declare a phase done.
-- Photos: all photo access goes through the ImageStore protocol (LocalImageStore in v1), JPEGs downsampled, thumbnails always generated, filenames in SwiftData.
-- Every screen must work in light and dark mode and at accessibility Dynamic Type sizes.
-- When uncertain about a product decision, check the PRD's locked decisions table first; if still uncertain, ask, don't invent features. Do not build v2 features (sync, dashboard, world whisky) but do not break the section 10 commitments that keep them cheap.
-```
+## 15. Instructions block for Claude Code
 
-## 13. Owner's weekly ritual (free Apple ID reality, obsolete once section 10.2 happens)
-Every 7 days the app stops launching (expired provisioning). Plug in the iPhone, open the project, press Run. Data is untouched. Do not delete the app from the phone; that erases the local database. Export a JSON backup from Settings after any big cataloging session.
+See `claude.md` at the repo root (updated for v2).

@@ -54,11 +54,20 @@ struct TastingNoteEditorView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(Strings.Form.save) { save() }
+                        .disabled(isEmpty)
                 }
             }
             .sheet(isPresented: $showingWheel) {
                 TastingWheelSheet()
             }
+        }
+    }
+
+    /// A note with nothing written in any field is just an empty card on
+    /// the detail screen.
+    private var isEmpty: Bool {
+        [nose, palate, finish, conclusion].allSatisfy {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
     }
 

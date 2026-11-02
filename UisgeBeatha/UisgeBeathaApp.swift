@@ -15,6 +15,8 @@ struct UisgeBeathaApp: App {
     let stockPhotoBackfill: StockPhotoBackfill
 
     init() {
+        AppNetwork.configureSharedImageCache()
+
         do {
             // Local-only in v1. The schema follows the CloudKit-forward rules
             // in the PRD, so enabling mirroring later is a configuration

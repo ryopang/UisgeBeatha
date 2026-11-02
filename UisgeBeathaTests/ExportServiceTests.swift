@@ -67,6 +67,13 @@ struct ExportServiceTests {
         #expect(ExportService.escapeCSVField("plain") == "plain")
     }
 
+    @Test func csvNeutralizesFormulaInjection() {
+        #expect(ExportService.escapeCSVField("=HYPERLINK(\"http://x\")") == "\"'=HYPERLINK(\"\"http://x\"\")\"")
+        #expect(ExportService.escapeCSVField("@SUM(A1)") == "'@SUM(A1)")
+        #expect(ExportService.escapeCSVField("+1") == "'+1")
+        #expect(ExportService.escapeCSVField("2026-11-02T00:00:00Z") == "2026-11-02T00:00:00Z")
+    }
+
     @Test func csvConcatenatesNotesIntoOneField() {
         let csv = ExportService.csv(from: [makeBottle()])
         let dataLine = csv.split(separator: "\r\n")[1]

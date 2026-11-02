@@ -204,4 +204,9 @@ struct BarcodeLookupTests {
         // A match in the first source short-circuits the rest.
         #expect(WhiskyLabelParser.age(in: ["12 Year Old", "18 Year Old"]) == 12)
     }
+
+    @Test func upcItemDBUpgradesPlainHTTPImagesToHTTPS() {
+        #expect(UPCItemDBTier.secureImageURL("http://example.org/t.jpg") == "https://example.org/t.jpg")
+        #expect(UPCItemDBTier.secureImageURL("https://example.org/t.jpg") == "https://example.org/t.jpg")
+    }
 }
